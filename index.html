@@ -91,25 +91,26 @@ sudo systemctl status ri.service</code></pre>
           </ol>
         </div>
 
-        <!-- DB Migration -->
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.3 Database Migration (UI‑Driven)</h3>
-          <ol class="list-decimal list-inside space-y-3 pl-4">
-            <li>Log in to Portal as <code>idauto::admin / idautoAdmin</code>.</li>
-            <li>Create a snapshot of the old DB VM (guards against overwriting production data).</li>
-            <li>Portal → <strong>Config → Systems → Migrate Database → Add Source</strong>. Point hostname to old DB.</li>
-            <li>Get DB password from <strong>Status → Advanced (7) → rapidIdentity.properties → Option&nbsp;4</strong>.</li>
-            <li>Select all modules except <em>Audit</em>; start migration.</li>
-            <li>If you hit errors:
-              <ul class="list-disc list-inside ml-4 space-y-1">
-                <li><strong>Default /8 CIDR</strong> – change to <code>/24</code> in Network Settings on each appliance.</li>
-                <li><strong>Schema mismatch</strong> – enable file‑system export and run on the new DB:
-                  <pre class="bg-gray-100 p-2 rounded"><code>psql idautodb idautoAdmin < /var/sftp/files/configdb.sql</code></pre>
-                </li>
-              </ul>
-            </li>
-          </ol>
-        </div>
+      <!--==============  DB Migration  ==============-->
+      <div class="space-y-4">
+        <h3 class="text-lg font-semibold">2.3 Database Migration (UI-Driven)</h3>
+        <ol class="list-decimal list-inside space-y-3 pl-4">
+          <li>Log in to Portal as <code>idauto::admin / idautoAdmin</code>.</li>
+          <li>Create a snapshot of the old DB VM (guards against overwriting production data).</li>
+          <li>Portal → <strong>Config → Systems → Migrate Database → Add Source</strong>. Point hostname to old DB.</li>
+          <li>Get DB password from <strong>Status → Advanced (7) → rapidIdentity.properties → Option 4</strong>.</li>
+          <li>Select all modules except <em>Audit</em>; start migration.</li>
+          <li>If you hit errors:
+            <ul class="list-disc list-inside ml-4 space-y-1">
+              <li><strong>Network Mask Verification</strong> - check the subnet mask in Network Settings; if it’s <code>/8</code>, confirm that’s what they really intend—an incorrect mask will break routing. For most on-prem networks you’ll want <code>/24</code>.</li>
+              <li><strong>Schema mismatch</strong> - enable file-system export and run on the new DB:
+                <pre class="bg-gray-100 p-2 rounded"><code>psql idautodb idautoAdmin < /var/sftp/files/configdb.sql</code></pre>
+              </li>
+            </ul>
+          </li>
+        </ol>
+      </div>
+
 
         <!-- File Store -->
         <div class="space-y-4">
