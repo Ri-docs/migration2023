@@ -33,7 +33,7 @@
         </h2>
         <ul class="list-disc list-inside space-y-2">
           <li>All old (VMware) and new (Nutanix) VMs <strong>must</strong> run the same RapidIdentity build.</li>
-          <li>Create snapshots of <em>every</em> old VM—they become your rollback point and a safety net against accidentally overwriting the running DB.</li>
+          <li>Create snapshots of <em>every</em> old VM - they become your rollback point and a safety net against accidentally overwriting the running DB.</li>
           <li>Gather admin credentials, DB passwords, and any config passwords stored in 1Password or other vaults.</li>
           <li>Record current IPs, subnets (usually <code>/24</code>, RapidIdentity defaults to <code>/8</code>), hostnames, and gateways for every appliance.</li>
         </ul>
@@ -102,7 +102,7 @@ sudo systemctl status ri.service</code></pre>
           <li>Select all modules except <em>Audit</em>; start migration.</li>
           <li>If you hit errors:
             <ul class="list-disc list-inside ml-4 space-y-1">
-              <li><strong>Network Mask Verification</strong> - check the subnet mask in Network Settings; if it’s <code>/8</code>, confirm that’s what they really intend—an incorrect mask will break routing. For most on-prem networks you’ll want <code>/24</code>.</li>
+              <li><strong>Network Mask Verification</strong> - check the subnet mask in Network Settings; if it’s <code>/8</code>, confirm that’s what they really intend - an incorrect mask will break routing. For most on-prem networks you’ll want <code>/24</code>.</li>
               <li><strong>Schema mismatch</strong> - enable file-system export and run on the new DB:
                 <pre class="bg-gray-100 p-2 rounded"><code>psql idautodb idautoAdmin < /var/sftp/files/configdb.sql</code></pre>
               </li>
@@ -138,9 +138,9 @@ sudo systemctl status ri.service</code></pre>
         <ul class="list-disc list-inside space-y-2">
           <li>RapidIdentity displays <em>running</em> even when DB is down. Always start the DB first.</li>
           <li>Replicating appliance roles/capabilities early avoids Web‑UI 500 errors later.</li>
-          <li>Default <code>/8</code> subnet masks break routing in most on‑prem networks—change to <code>/24</code>.</li>
+          <li>Default <code>/8</code> subnet masks break routing in most on‑prem networks - change to <code>/24</code>.</li>
           <li>Firewall: new VMs may block <code>5432/tcp</code>. Test with <code>nmap</code> or <code>telnet &lt;ip&gt; 5432</code>.</li>
-          <li>If versions misalign (old upgraded, new latest) expect schema mismatches—copy <code>configdb.sql</code>.</li>
+          <li>If versions misalign (old upgraded, new latest) expect schema mismatches - copy <code>configdb.sql</code>.</li>
           <li>Always verify new appliances point to the <em>new</em> CIFS share after copy.</li>
           <li>Disable SSO temporarily if login loops occur after cut‑over.</li>
         </ul>
@@ -186,7 +186,7 @@ curl https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.ta
           <span class="mr-2">5.</span> Validation &amp; Cut‑Over
         </h2>
         <ol class="list-decimal list-inside space-y-2 pl-4">
-          <li>Load Portal &amp; Connect—verify login and basic workflows.</li>
+          <li>Load Portal &amp; Connect - verify login and basic workflows.</li>
           <li>Monitor logs on all new nodes for errors.</li>
           <li>Confirm DNS propagation; retire old VMs.</li>
         </ol>
