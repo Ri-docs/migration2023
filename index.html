@@ -3,18 +3,17 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RapidIdentity On‑Prem Migration Guide</title>
+    <title>RapidIdentity On-Prem Migration Guide</title>
     <script src="https://cdn.tailwindcss.com"></script>
   </head>
   <body class="bg-gray-50 text-gray-800 antialiased">
-    <!--==============  HEADER  ==============-->
     <header class="bg-sky-700 text-white shadow">
       <div class="max-w-7xl mx-auto flex items-center justify-between px-4 py-6">
         <h1 class="text-2xl font-semibold tracking-wide">
           RapidIdentity Migration Cheat Sheet
         </h1>
         <nav class="hidden md:flex space-x-6 text-sm font-medium">
-          <a href="#pre" class="hover:underline">Pre‑Migration</a>
+          <a href="#pre" class="hover:underline">Pre-Migration</a>
           <a href="#planning" class="hover:underline">Planning</a>
           <a href="#execution" class="hover:underline">Live&nbsp;Execution</a>
           <a href="#lessons" class="hover:underline">Lessons&nbsp;Learned</a>
@@ -26,64 +25,70 @@
     </header>
 
     <main class="max-w-4xl mx-auto px-4 py-12 space-y-20">
-      <!--==============  PRE‑MIGRATION  ==============-->
       <section id="pre" class="space-y-6">
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">0.</span> Pre‑Migration
+          <span class="mr-2">0.</span> Pre-Migration
         </h2>
         <ul class="list-disc list-inside space-y-2">
-          <li>All old (VMware) and new (Nutanix) VMs <strong>must</strong> run the same RapidIdentity build.</li>
-          <li>Create snapshots of <em>every</em> old VM - they become your rollback point and a safety net against accidentally overwriting the running DB.</li>
-          <li>Gather admin credentials, DB passwords, and any config passwords stored in 1Password or other vaults.</li>
+          <li>Create new VMs for ARMS, DSS, and DB using the RI ISO. During install choose "Other versions" and select the exact production build. Assign temporary IPs to each new VM.</li>
+          <li>All old (VMware) and new (Nutanix) VMs must run the same RapidIdentity build.</li>
+          <li>Create snapshots of every old VM. These are your rollback points and protect against accidentally overwriting the running DB.</li>
+          <li>Gather admin credentials, DB passwords, and any config passwords stored in a vault.</li>
           <li>Record current IPs, subnets (usually <code>/24</code>, RapidIdentity defaults to <code>/8</code>), hostnames, and gateways for every appliance.</li>
+          <li>Prepare an old-to-new server mapping list with hostnames and IPs for tracking.</li>
+          <li>Plan to apply the required DB prerequisite on the new DB appliance. This is required with the current ISO.</li>
         </ul>
       </section>
 
-      <!--==============  PLANNING  ==============-->
       <section id="planning" class="space-y-6">
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
           <span class="mr-2">1.</span> Planning
         </h2>
         <ol class="list-decimal list-inside space-y-4 pl-4">
           <li>
-            <p class="font-medium">Present the High‑Level Flow</p>
-            <p>Version parity → DB migration → file‑store migration → DNS switch → validation → retire old VMs.</p>
+            <p class="font-medium">Present the High-Level Flow</p>
+            <p>Version parity -> DB prerequisite on new DB -> DB migration -> File-store migration -> Cutover (re-IP to production) -> Validation -> Upgrade to latest LTS.</p>
           </li>
           <li>
-            <p class="font-medium">Version &amp; Role Alignment</p>
-            <p>Confirm builds and replicate appliance roles / capabilities from the old three nodes to the new three nodes.</p>
+            <p class="font-medium">Version and Role Alignment</p>
+            <p>Confirm builds and replicate appliance roles/capabilities from the old three nodes to the new three nodes.</p>
           </li>
           <li>
-            <p class="font-medium">Network &amp; Firewall Snapshot</p>
-            <p>Document firewall rules (e.g., port <code>5432/tcp</code> for PostgreSQL) and verify new VMs allow required traffic.</p>
+            <p class="font-medium">Network and Firewall Snapshot</p>
+            <p>Document firewall rules (for example, port <code>5432/tcp</code> for PostgreSQL) and verify new VMs allow required traffic.</p>
           </li>
           <li>
-            <p class="font-medium">Hosts‑File Strategy</p>
+            <p class="font-medium">Hosts-File Strategy</p>
             <p>If the old DB VM uses <code>/etc/hosts</code> to define <code>idautodb</code>, replicate on the new DB VM pointing to itself.</p>
           </li>
         </ol>
       </section>
 
-      <!--==============  LIVE EXECUTION  ==============-->
       <section id="execution" class="space-y-10">
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
           <span class="mr-2">2.</span> Live Execution
         </h2>
 
-        <!-- DB Start -->
         <div class="space-y-4">
           <h3 class="text-lg font-semibold">2.1 Start the Database Service</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
-            <li>On the <strong>new DB VM</strong>, start the DB using the original password (from the old DB or <em>config password</em>). The Web UI will timeout until this is running.</li>
-            <li>Optional connectivity test: <code class="bg-gray-100 rounded px-1">nmap -p 5432 &lt;DB-IP&gt;</code> from another appliance.</li>
+            <li>On the <strong>new DB VM</strong>, start the DB using the original password (from the old DB or config password). The Web UI will timeout until this is running.</li>
+            <li>Connectivity test: <code class="bg-gray-100 rounded px-1">nmap -p 5432 &lt;DB-IP&gt;</code> from another appliance.</li>
           </ol>
         </div>
 
-        <!-- Capabilities -->
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.2 Replicate Capabilities &amp; Restart RI</h3>
+          <h3 class="text-lg font-semibold">2.2 Apply the DB Prerequisite (Required)</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
-            <li>Main&nbsp;Menu → <strong>Status (1)</strong> → <strong>Capabilities (5)</strong> on each old appliance; mirror selections on each new appliance.</li>
+            <li>Enter Tech Mode on the <strong>new DB</strong> appliance and apply the prerequisite lines from the internal instructions provided with the ISO release notes.</li>
+            <li>Restart services if instructed and confirm the DB is reachable on port 5432.</li>
+          </ol>
+        </div>
+
+        <div class="space-y-4">
+          <h3 class="text-lg font-semibold">2.3 Replicate Capabilities and Restart RI</h3>
+          <ol class="list-decimal list-inside space-y-2 pl-4">
+            <li>Main Menu -> <strong>Status (1)</strong> -> <strong>Capabilities (5)</strong> on each old appliance; mirror selections on each new appliance.</li>
             <li>Restart services afterwards:
               <pre class="bg-gray-100 p-2 rounded"><code>sudo systemctl restart ri.service
 sudo systemctl status ri.service</code></pre>
@@ -91,70 +96,76 @@ sudo systemctl status ri.service</code></pre>
           </ol>
         </div>
 
-      <!--==============  DB Migration  ==============-->
-      <div class="space-y-4">
-        <h3 class="text-lg font-semibold">2.3 Database Migration (UI-Driven)</h3>
-        <ol class="list-decimal list-inside space-y-3 pl-4">
-          <li>Log in to Portal as <code>idauto::admin / idautoAdmin</code>.</li>
-          <li>Create a snapshot of the old DB VM (guards against overwriting production data).</li>
-          <li>Portal → <strong>Config → Systems → Migrate Database → Add Source</strong>. Point hostname to old DB.</li>
-          <li>Get DB password from <strong>Status → Advanced (7) → rapidIdentity.properties → Option 4</strong>.</li>
-          <li>Select all modules except <em>Audit</em>; start migration.</li>
-          <li>If you hit errors:
-            <ul class="list-disc list-inside ml-4 space-y-1">
-              <li><strong>Network Mask Verification</strong> - check the subnet mask in Network Settings; if it’s <code>/8</code>, confirm that’s what they really intend - an incorrect mask will break routing. For most on-prem networks you’ll want <code>/24</code>.</li>
-              <li><strong>Schema mismatch</strong> - enable file-system export and run on the new DB:
-                <pre class="bg-gray-100 p-2 rounded"><code>psql idautodb idautoAdmin < /var/sftp/files/configdb.sql</code></pre>
-              </li>
-            </ul>
-          </li>
-        </ol>
-      </div>
-
-
-        <!-- File Store -->
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.4 File‑Store Migration (CIFS)</h3>
+          <h3 class="text-lg font-semibold">2.4 Database Migration (UI-driven)</h3>
+          <ol class="list-decimal list-inside space-y-3 pl-4">
+            <li>Log in to Portal as <code>idauto::admin / idautoAdmin</code>.</li>
+            <li>Create a snapshot of the old DB VM.</li>
+            <li>Portal -> <strong>Config -> Systems -> Migrate Database -> Add Source</strong>. Point hostname to old DB.</li>
+            <li>Get DB password from <strong>Status -> Advanced (7) -> rapidIdentity.properties -> Option 4</strong>.</li>
+            <li>Select all modules except <em>Audit</em>; start migration.</li>
+            <li>If you hit errors:
+              <ul class="list-disc list-inside ml-4 space-y-1">
+                <li><strong>Network Mask Verification</strong> - check the subnet mask in Network Settings. If it is <code>/8</code>, confirm that is intended. For most on-prem networks use <code>/24</code>.</li>
+                <li><strong>Schema mismatch</strong> - enable file-system export and run on the new DB:
+                  <pre class="bg-gray-100 p-2 rounded"><code>psql idautodb idautoAdmin &lt; /var/sftp/files/configdb.sql</code></pre>
+                </li>
+              </ul>
+            </li>
+          </ol>
+        </div>
+
+        <div class="space-y-4">
+          <h3 class="text-lg font-semibold">2.5 File-Store Migration (CIFS)</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
-            <li>Old share path: <strong>Config → General → Settings → File Storage</strong>.</li>
-            <li>New share path: VM console <strong>Main&nbsp;Menu 6 → Connection Info</strong>.</li>
-            <li>Map both shares in Windows Explorer and copy everything from old → new.</li>
+            <li>Old share path: <strong>Config -> General -> Settings -> File Storage</strong>.</li>
+            <li>New share path: VM console <strong>Main Menu 6 -> Connection Info</strong>.</li>
+            <li>Map both shares in Windows Explorer and copy everything from old -> new.</li>
             <li>In the new UI set File Storage to the new share.</li>
           </ol>
         </div>
 
-        <!-- DNS -->
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.5 DNS Cut‑Over</h3>
-          <p>Update production hostnames (Portal, Connect, etc.) to resolve to the new app‑node IPs. Customer typically owns this step.</p>
+          <h3 class="text-lg font-semibold">2.6 Cut-Over (Re-IP or DNS)</h3>
+          <ol class="list-decimal list-inside space-y-2 pl-4">
+            <li>Preferred: re-IP the new appliances to the production IPs. Alternative: update DNS to point to the new app-node IPs.</li>
+            <li>Shutdown order for old: ARMS -> DSS -> DB.</li>
+            <li>Boot order for new: DB -> DSS -> ARMS/Portal.</li>
+          </ol>
+        </div>
+
+        <div class="space-y-4">
+          <h3 class="text-lg font-semibold">2.7 Upgrade to Latest LTS</h3>
+          <ol class="list-decimal list-inside space-y-2 pl-4">
+            <li>After the cutover validates cleanly, upgrade the new servers to the latest LTS.</li>
+            <li>Re-run the validation checks in section 5.</li>
+          </ol>
         </div>
       </section>
 
-      <!--==============  LESSONS LEARNED  ==============-->
       <section id="lessons" class="space-y-6">
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">3.</span> Lessons Learned (Real‑Time Session)
+          <span class="mr-2">3.</span> Lessons Learned (Real-Time Session)
         </h2>
         <ul class="list-disc list-inside space-y-2">
-          <li>RapidIdentity displays <em>running</em> even when DB is down. Always start the DB first.</li>
-          <li>Replicating appliance roles/capabilities early avoids Web‑UI 500 errors later.</li>
-          <li>Default <code>/8</code> subnet masks break routing in most on‑prem networks - change to <code>/24</code>.</li>
+          <li>RapidIdentity can display running even when DB is down. Always start the DB first.</li>
+          <li>Replicating appliance roles/capabilities early avoids Web UI 500 errors later.</li>
+          <li>Default <code>/8</code> subnet masks break routing in most on-prem networks. Change to <code>/24</code>.</li>
           <li>Firewall: new VMs may block <code>5432/tcp</code>. Test with <code>nmap</code> or <code>telnet &lt;ip&gt; 5432</code>.</li>
-          <li>If versions misalign (old upgraded, new latest) expect schema mismatches - copy <code>configdb.sql</code>.</li>
-          <li>Always verify new appliances point to the <em>new</em> CIFS share after copy.</li>
-          <li>Disable SSO temporarily if login loops occur after cut‑over.</li>
+          <li>If versions misalign expect schema mismatches. Import <code>configdb.sql</code> then re-run migration.</li>
+          <li>Always verify new appliances point to the new CIFS share after copy.</li>
+          <li>Disable SSO temporarily if login loops occur after cutover.</li>
         </ul>
       </section>
 
-      <!--==============  ALTERNATE SCRIPT METHOD  ==============-->
       <section id="alternate" class="space-y-6">
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
           <span class="mr-2">4.</span> Alternate Migration (JP Script)
         </h2>
-        <p class="mb-4">JP&rsquo;s <code>migrate-appliance.sh</code> script can move data appliance‑to‑appliance without using the UI.</p>
+        <p class="mb-4">JP's <code>migrate-appliance.sh</code> script can move data appliance-to-appliance without using the UI. The DB prerequisite on the new DB is still required with the current ISO.</p>
         <ol class="list-decimal list-inside space-y-4 pl-4">
           <li>
-            <p class="font-medium">Download &amp; Unpack</p>
+            <p class="font-medium">Download and Unpack</p>
             <pre class="bg-gray-100 p-2 rounded"><code>cd /root
 curl https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.tar.gz | tar xvz</code></pre>
           </li>
@@ -167,51 +178,48 @@ curl https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.ta
           <li>
             <p class="font-medium">Run on Other Appliances</p>
             <pre class="bg-gray-100 p-2 rounded"><code>./migrate-appliance.sh --src-host=&lt;OLD-ARMS-IP&gt;</code></pre>
-            <p>Be sure <code>/etc/hosts</code> on each new appliance points <code>idautodb</code> to the new DB IP.</p>
+            <p>Ensure <code>/etc/hosts</code> on each new appliance points <code>idautodb</code> to the new DB IP.</p>
           </li>
           <li>
-            <p class="font-medium">Re‑IP &amp; Start Sequence</p>
+            <p class="font-medium">Re-IP and Start Sequence</p>
             <ol class="list-decimal list-inside pl-4 space-y-1">
-              <li>Shut down old appliances (ARMS → DSS → DB).</li>
-              <li>Assign their production IPs to the new appliances.</li>
+              <li>Shut down old appliances (ARMS -> DSS -> DB).</li>
+              <li>Assign their production IPs to the new appliances or update DNS to the new IPs.</li>
               <li>Boot order: DB first, then DSS, ARMS, Portal.</li>
             </ol>
           </li>
         </ol>
       </section>
 
-      <!--==============  VALIDATION  ==============-->
       <section id="validation" class="space-y-6">
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">5.</span> Validation &amp; Cut‑Over
+          <span class="mr-2">5.</span> Validation
         </h2>
         <ol class="list-decimal list-inside space-y-2 pl-4">
-          <li>Load Portal &amp; Connect - verify login and basic workflows.</li>
+          <li>Load Portal and Connect. Verify login and representative workflows.</li>
           <li>Monitor logs on all new nodes for errors.</li>
-          <li>Confirm DNS propagation; retire old VMs.</li>
+          <li>Confirm DNS or production IPs are correct and reachable. Retire old VMs.</li>
+          <li>After upgrading to the latest LTS, re-run these checks.</li>
         </ol>
       </section>
 
-      <!--==============  TROUBLESHOOTING  ==============-->
       <section id="troubleshooting" class="space-y-6 pb-16">
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">6.</span> Troubleshooting &amp; Quick Commands
+          <span class="mr-2">6.</span> Troubleshooting and Quick Commands
         </h2>
         <div class="grid md:grid-cols-2 gap-8">
-          <!-- Common Issues -->
           <div>
             <h3 class="font-semibold mb-2">Common Issues</h3>
             <ul class="list-disc list-inside space-y-2">
-              <li><strong>DB won’t start</strong> – wrong password; pull from <code>rapidIdentity.properties</code>.</li>
-              <li><strong>Portal 404/500</strong> – DB down or hosts‑file mis‑pointed.</li>
-              <li><strong>Schema mismatch</strong> – import <code>configdb.sql</code> then re‑run migration.</li>
-              <li><strong>Port 5432 blocked</strong> – open firewall or use <code>nmap</code> to verify.</li>
-              <li><strong>SSO loops</strong> – disable SSO in properties, reboot services.</li>
+              <li><strong>DB won't start</strong> - wrong password; pull from <code>rapidIdentity.properties</code>.</li>
+              <li><strong>Portal 404/500</strong> - DB down or hosts-file mis-pointed.</li>
+              <li><strong>Schema mismatch</strong> - import <code>configdb.sql</code> then re-run migration.</li>
+              <li><strong>Port 5432 blocked</strong> - open firewall or use <code>nmap</code> to verify.</li>
+              <li><strong>SSO loops</strong> - disable SSO in properties, reboot services.</li>
             </ul>
           </div>
-          <!-- Cheatsheet -->
           <div>
-            <h3 class="font-semibold mb-2">Cheat‑Sheet Commands</h3>
+            <h3 class="font-semibold mb-2">Cheat-Sheet Commands</h3>
             <pre class="bg-gray-100 p-3 rounded text-sm whitespace-pre-wrap"><code># Restart RI
 sudo systemctl restart ri.service
 
@@ -231,10 +239,9 @@ find / -iname "configdb.sql" 2>/dev/null</code></pre>
       </section>
     </main>
 
-    <!--==============  FOOTER  ==============-->
     <footer class="bg-sky-700 text-white text-sm py-4">
       <div class="max-w-7xl mx-auto px-4 text-center">
-       RapidIdentity Migration Guide 
+       RapidIdentity Migration Guide
       </div>
     </footer>
   </body>
