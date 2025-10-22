@@ -52,7 +52,7 @@
         <ol class="list-decimal list-inside space-y-4 pl-4">
           <li>
             <p class="font-medium">High-Level Flow</p>
-            <p>Version parity → DB prerequisite on new DB → Legacy schema remediation (if needed) → DB migration → File-store migration → Cutover (re-IP) → Validation → Upgrade to latest LTS.</p>
+            <p>Version parity -> DB prerequisite on new DB -> Legacy schema remediation (if needed) -> DB migration -> File-store migration -> Cutover (re-IP) -> Validation -> Upgrade to latest LTS.</p>
           </li>
           <li>
             <p class="font-medium">Version and Role Alignment</p>
@@ -87,7 +87,7 @@
         <div class="space-y-4">
           <h3 class="text-lg font-semibold">2.2 Apply the DB Prerequisite (Required: Upgrade to PG15 on New DB)</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
-            <li>Get the DB password: Rapididentity → Advanced → Edit <code>rapididentity.properties</code> → <code>db.password</code>.</li>
+            <li>Get the DB password: Rapididentity -> Advanced -> Edit <code>rapididentity.properties</code> -> <code>db.password</code>.</li>
             <li>Enter Tech Mode and run:
               <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>sh /var/opt/idauto/admin/2024.1/scripts/config/upgradePostgresql.sh '&lt;installed_pg_major&gt;' '&lt;dbPassword&gt;'</code></pre>
             </li>
@@ -97,7 +97,7 @@
             </li>
             <li>Start the RI service again and confirm port 5432 is reachable from other nodes.</li>
           </ol>
-          <p class="text-sm text-red-700 font-medium">Deprecated: Do not use the legacy menu-edit script that swapped PG11→PG12; it is no longer required and may break current appliances.</p>
+          <p class="text-sm text-red-700 font-medium">Deprecated: Do not use the legacy menu-edit script that swapped PG11->PG12; it is no longer required and may break current appliances.</p>
         </div>
 
         <div class="space-y-4">
@@ -120,8 +120,8 @@
           <ol class="list-decimal list-inside space-y-3 pl-4">
             <li>Log in to Portal as <code>idauto::admin / idautoAdmin</code>.</li>
             <li>Snapshot the old DB VM.</li>
-            <li>Portal → <strong>Config → Systems → Migrate Database → Add Source</strong> and point to the old DB.</li>
-            <li>Get the DB password from <strong>Status → Advanced (7) → rapidIdentity.properties → Option 4</strong>.</li>
+            <li>Portal -> <strong>Config -> Systems -> Migrate Database -> Add Source</strong> and point to the old DB.</li>
+            <li>Get the DB password from <strong>Status -> Advanced (7) -> rapidIdentity.properties -> Option 4</strong>.</li>
             <li>Select all modules except <em>Audit</em> and start the migration.</li>
             <li>If errors occur:
               <ul class="list-disc list-inside ml-4 space-y-1">
@@ -135,9 +135,9 @@
         <div class="space-y-4">
           <h3 class="text-lg font-semibold">2.5 File-Store Migration (CIFS)</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
-            <li>Old path: <strong>Config → General → Settings → File Storage</strong>.</li>
-            <li>New path: VM console <strong>Main Menu 6 → Connection Info</strong>.</li>
-            <li>Copy old → new and point the new UI at the new share.</li>
+            <li>Old path: <strong>Config -> General -> Settings -> File Storage</strong>.</li>
+            <li>New path: VM console <strong>Main Menu 6 -> Connection Info</strong>.</li>
+            <li>Copy old -> new and point the new UI at the new share.</li>
           </ol>
         </div>
 
@@ -145,8 +145,8 @@
           <h3 class="text-lg font-semibold">2.6 Cut-Over (Re-IP or DNS)</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
             <li>Preferred: re-IP the new appliances to production IPs. Alternative: update DNS.</li>
-            <li>Shutdown order for old: ARMS → DSS → DB.</li>
-            <li>Boot order for new: DB → DSS → ARMS/Portal.</li>
+            <li>Shutdown order for old: ARMS -> DSS -> DB.</li>
+            <li>Boot order for new: DB -> DSS -> ARMS/Portal.</li>
           </ol>
         </div>
 
@@ -177,7 +177,7 @@
       <section id="alternate" class="space-y-6">
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
           <span class="mr-2">4.</span> Alternate Migration (JP Script)</h2>
-        <p class="mb-4">JP's <code>migrate-appliance.sh</code> can migrate data without the UI. The DB prerequisite on the new DB is still required with the current ISO. The legacy menu-edit script that swapped PG11→PG12 is deprecated and should not be used.</p>
+        <p class="mb-4">JP's <code>migrate-appliance.sh</code> can migrate data without the UI. The DB prerequisite on the new DB is still required with the current ISO. The legacy menu-edit script that swapped PG11->PG12 is deprecated and should not be used.</p>
         <ol class="list-decimal list-inside space-y-4 pl-4">
           <li>
             <p class="font-medium">Download and Unpack</p>
@@ -198,9 +198,9 @@ curl https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.ta
           <li>
             <p class="font-medium">Re-IP and Start Sequence</p>
             <ol class="list-decimal list-inside pl-4 space-y-1">
-              <li>Shut down old appliances (ARMS → DSS → DB).</li>
+              <li>Shut down old appliances (ARMS -> DSS -> DB).</li>
               <li>Assign production IPs to the new appliances or update DNS.</li>
-              <li>Boot order: DB → DSS → ARMS → Portal.</li>
+              <li>Boot order: DB -> DSS -> ARMS -> Portal.</li>
             </ol>
           </li>
         </ol>
