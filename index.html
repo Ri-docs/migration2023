@@ -50,9 +50,8 @@
           <span class="mr-2">1.</span> Planning
         </h2>
         <ol class="list-decimal list-inside space-y-4 pl-4">
-          <li>High level flow: version parity, network on new appliances with temp IPs, DB Fix on new DB, migration by script, file server install if needed, transfer IPs, validation, snapshots, upgrades.</li>
+          <li>High level flow: version parity, network on new appliances with temp IPs, stop RI on old appliances, update hosts file, DB Fix on new DB, migration by script, install file server, transfer IPs, validation, snapshots, upgrades.</li>
           <li>With the script path, roles and most settings clone over automatically.</li>
-          <li>Ensure routing and required traffic such as 5432 tcp. Correct masks if the default is not intended.</li>
         </ol>
       </section>
 
@@ -62,8 +61,27 @@
         </h2>
 
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.1 DB Fix on new DB</h3>
-          <p>Run this on the new DB before any download or curl.</p>
+          <h3 class="text-lg font-semibold">2.1 Stop RI on old appliances</h3>
+          <p>Run on old ARMS, DSS, and DB.</p>
+          <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>system rapididentity stop</code></pre>
+        </div>
+
+        <div class="space-y-4">
+          <h3 class="text-lg font-semibold">2.2 Hosts file on all new appliances</h3>
+          <p>Add this line on all three new appliances before the DB Fix and migration.</p>
+          <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>&lt;new-db-ip&gt; idautodb</code></pre>
+          <p class="text-sm text-gray-700">After Transfer IPs update the same line to map idautodb to the production DB ip (the old DB ip).</p>
+        </div>
+
+        <div class="space-y-4">
+          <h3 class="text-lg font-semibold">2.3 Download bundle and migrate</h3>
+          <p>Run these two lines on all three new appliances.</p>
+          <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>cd /root
+curl https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.tar.gz | tar xvz</code></pre>
+          <ol class="list-decimal list-inside space-y-3 pl-4">
+            <li>Run the DB Fix on the new DB.</li>
+          </ol>
+
           <details class="group border border-gray-200 rounded-lg">
             <summary class="cursor-pointer select-none px-3 py-2 font-medium text-sky-700">Show DB Fix script</summary>
             <div class="px-3 pb-3 mt-2">
@@ -93,20 +111,10 @@ mv serviceCmd.sh serviceCmd.bak
 cat serviceCmd.bak | sed '/11/s//15/g' > serviceCmd.sh
 chown root.idauto serviceCmd.sh
 chmod 550 serviceCmd.sh</code></pre>
-              <p class="text-sm text-gray-700 mt-2">If the current PG major in a fresh sandbox is newer than 15, replace 15 in the script with that newer major such as 16.</p>
+              <p class="text-sm text-gray-700 mt-2">If PG major in a fresh sandbox is newer than 15 replace 15 with the newer major such as 16.</p>
             </div>
           </details>
-        </div>
 
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.2 Download and unpack migration bundle</h3>
-          <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>cd /root
-curl https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.tar.gz | tar xvz</code></pre>
-          <p  class="text-sm text-gray-700">Run this on all 3 appliances.</p>
-        </div>
-
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.3 Migrate DB then app nodes</h3>
           <ol class="list-decimal list-inside space-y-3 pl-4">
             <li>On the new DB:
               <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>./migrate-appliance.sh --src-host=&lt;OLD-DB-IP&gt; --target-db-host=localhost --migrate-db</code></pre>
@@ -117,45 +125,48 @@ curl https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.ta
             <li>On the new DSS:
               <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>./migrate-appliance.sh --src-host=&lt;OLD-DSS-IP&gt; --target-db-host=idautodb --migrate-db</code></pre>
             </li>
-            <li class="text-sm text-gray-700">Ensure each new appliance has an hosts entry mapping idautodb to the new DB IP.</li>
+            <li class="text-sm text-gray-700">Ensure each new appliance has a hosts entry mapping idautodb to the new DB ip before running these.</li>
           </ol>
+
+          <details class="group border border-gray-200 rounded-lg">
+            <summary class="cursor-pointer select-none px-3 py-2 font-medium text-sky-700">Alternative migration by UI</summary>
+            <div class="px-3 pb-3 mt-2 space-y-4">
+              <ol class="list-decimal list-inside space-y-3 pl-4">
+                <li>Open Portal and sign in as idauto::admin.</li>
+                <li>Go to Configuration > Systems > Migrate Database > Add Source and point to the old DB.</li>
+                <li>Get the DB password from Status > Advanced > rapidIdentity.properties.</li>
+                <li>Select all modules except Audit and start the migration.</li>
+                <li>If a schema mismatch appears export Database Configuration Tables on old, place the file on new at
+                  <code>/var/sftp/files/configdb.sql</code> then run:
+                  <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin &lt; /var/sftp/files/configdb.sql
+system rapididentity stop
+system rapididentity start</code></pre>
+                </li>
+              </ol>
+            </div>
+          </details>
         </div>
 
         <div class="space-y-4">
           <h3 class="text-lg font-semibold">2.4 Install File Server</h3>
-          <p>In the terminal UI choose File Server and install. If prompted set a password.</p>
+          <p>In the terminal UI select File Server and install. If prompted set a password.</p>
         </div>
 
         <div class="space-y-4">
           <h3 class="text-lg font-semibold">2.5 Pre cutover checks</h3>
-          <p>Confirm every new appliance will start and join the cluster. You can confirm by reading logs or by disabling SSO in rapididentity.properties to log in. Look for Successfully join cluster or the license sequence in logs.</p>
+          <p>Confirm every new appliance will start and join the cluster. Check logs or disable SSO in rapididentity.properties to log in. In the UI you can verify at Configuration > Systems > Cluster. Look for Successfully join cluster or the license sequence in logs.</p>
         </div>
 
         <div class="space-y-4">
           <h3 class="text-lg font-semibold">2.6 Transfer IPs</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
+            <li>If supported by the hypervisor, disable the NIC on each old appliance.</li>
             <li>Shutdown old appliances in the order ARMS, DSS, DB.</li>
             <li>Assign production IPs to the new appliances.</li>
+            <li>Update the hosts file line on each new appliance to map idautodb to the production DB ip.</li>
             <li>Start new appliances in the order DB, DSS, ARMS and Portal.</li>
           </ol>
         </div>
-
-        <details class="group border border-gray-200 rounded-lg">
-          <summary class="cursor-pointer select-none px-3 py-2 font-medium text-sky-700">Alternative migration by UI</summary>
-          <div class="px-3 pb-3 mt-2 space-y-4">
-            <ol class="list-decimal list-inside space-y-3 pl-4">
-              <li>Open Portal and sign in as idauto::admin.</li>
-              <li>Go to Configuration, Systems, Migrate Database, Add Source and point to the old DB.</li>
-              <li>Get the DB password from Status, Advanced, rapidIdentity.properties.</li>
-              <li>Select all modules except Audit and start the migration.</li>
-              <li>If a schema mismatch appears, export Database Configuration Tables on old, place the file on new at
-                <code>/var/sftp/files/configdb.sql</code>, then run:
-                <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin &lt; /var/sftp/files/configdb.sql
-sudo systemctl restart ri.service</code></pre>
-              </li>
-            </ol>
-          </div>
-        </details>
       </section>
 
       <section id="validation" class="space-y-6">
@@ -167,7 +178,7 @@ sudo systemctl restart ri.service</code></pre>
           <li>Run representative workflows and check logs on all nodes.</li>
           <li>DNS or production IPs resolve to the new appliances.</li>
           <li>Snapshot the new appliances.</li>
-          <li>Open the admin UI and go to Configuration, System, Updates, Custom Update. Enter the following:
+          <li>Go to Configuration > System > Updates > Custom Update and enter:
             <div class="mt-2">
               <div class="grid grid-cols-1 gap-2">
                 <div class="flex items-start gap-2"><span class="w-28 font-medium">Filename</span><span>rapididentity-2020.1.5-7597.zip</span></div>
@@ -175,10 +186,9 @@ sudo systemctl restart ri.service</code></pre>
                 <div class="flex items-start gap-2"><span class="w-28 font-medium">Checksum</span><span class="break-all">35dac1d2f77aacc8aded892cc7e50330e739a855</span></div>
               </div>
             </div>
-            <p class="text-sm text-gray-700 mt-2">This moves the appliance to the 2020 release. After this it will pick up LTS releases.</p>
           </li>
           <li>Snapshot again and choose the 2025 release.</li>
-          <li>After the 2025 upgrade completes and is stable, take a final post migration snapshot.</li>
+          <li>After the 2025 upgrade completes and is stable take a final post migration snapshot.</li>
         </ol>
       </section>
 
@@ -190,17 +200,16 @@ sudo systemctl restart ri.service</code></pre>
           <div>
             <h3 class="font-semibold mb-2">Common issues</h3>
             <ul class="list-disc list-inside space-y-2">
-              <li>CLI shows DB running but Postgres is not installed. Run the DB Fix step and then the migration script.</li>
+              <li>CLI shows DB running but Postgres is not installed. Run the DB Fix step then the migration script.</li>
               <li>Routing or mask issues. Correct the mask and retest.</li>
-              <li>Port 5432 blocked. Use pg_isready or psql to verify.</li>
               <li>SSO loops. Disable SSO in rapididentity.properties and restart RI.</li>
             </ul>
           </div>
           <div>
             <h3 class="font-semibold mb-2">Cheat sheet</h3>
-            <pre class="bg-gray-100 p-3 rounded text-sm whitespace-pre-wrap"><code>sudo systemctl restart ri.service
-psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"
-psql idautodb idautoAdmin -t -A -c "select 1"</code></pre>
+            <pre class="bg-gray-100 p-3 rounded text-sm whitespace-pre-wrap"><code>system rapididentity stop
+system rapididentity start
+psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"</code></pre>
           </div>
         </div>
       </section>
