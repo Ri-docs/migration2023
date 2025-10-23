@@ -86,7 +86,7 @@ chmod 550 serviceCmd.sh</code></pre>
         <ol class="list-decimal list-inside space-y-4 pl-4">
           <li>
             <p class="font-medium">High Level Flow</p>
-            <p>Version parity -> DB Fix on new DB -> DB install/upgrade on new DB -> Legacy schema remediation (if needed) -> DB migration -> File store migration -> Cutover (re IP) -> Validation -> Upgrade to latest LTS.</p>
+            <p>Version parity -> stop RI service on old appliances -> Configure network on new appliances (temp IPs) -> DB Fix on new DB -> DB migration -> File store migration -> Cutover (re IP) -> Validation -> Upgrade to latest LTS.</p>
           </li>
           <li>
             <p class="font-medium">Version and Role Alignment</p>
@@ -94,7 +94,7 @@ chmod 550 serviceCmd.sh</code></pre>
           </li>
           <li>
             <p class="font-medium">Network and Firewall Snapshot</p>
-            <p>Document rules and verify required traffic, including <code>5432/tcp</code>.</p>
+            <p>Document rules and verify required traffic</p>
           </li>
           <li>
             <p class="font-medium">Hosts File Strategy</p>
@@ -108,42 +108,10 @@ chmod 550 serviceCmd.sh</code></pre>
           <span class="mr-2">2.</span> Live Execution
         </h2>
 
-        <div class="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-800">
-          <p class="font-medium">Order matters</p>
-          <p>Run the DB Fix script on the new DB first. Then proceed with any downloads or migration scripts.</p>
-        </div>
+
 
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.1 Install or Verify Postgres on New DB</h3>
-          <ol class="list-decimal list-inside space-y-2 pl-4">
-            <li>If Postgres is not installed, install it:
-              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>sh /var/opt/idauto/admin/2024.1/scripts/config/installPostgreSQL.sh</code></pre>
-            </li>
-            <li>Check version:
-              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"</code></pre>
-            </li>
-            <li>If major is not 15, upgrade on the new DB:
-              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>sh /var/opt/idauto/admin/2024.1/scripts/config/upgradePostgresql.sh '&lt;installed_pg_major&gt;' '&lt;dbPassword&gt;'
-psql idautodb idautoAdmin -t -A -c "show server_version;"</code></pre>
-            </li>
-          </ol>
-        </div>
-
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.2 Legacy Schema Remediation</h3>
-          <p>Use if the migration shows schema mismatch or the old environment is 2019.x.</p>
-          <ol class="list-decimal list-inside space-y-3 pl-4">
-            <li>Export <code>configdb.sql</code> from old (Database Configuration Tables only).</li>
-            <li>Place the file on new DB at <code>/var/sftp/files/configdb.sql</code>.</li>
-            <li>Import and restart:
-              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin &lt; /var/sftp/files/configdb.sql
-sudo systemctl restart ri.service</code></pre>
-            </li>
-          </ol>
-        </div>
-
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.3 Database Migration</h3>
+          <h3 class="text-lg font-semibold">2.1 Database Migration</h3>
           <ol class="list-decimal list-inside space-y-3 pl-4">
             <li>Log in to Portal as <code>idauto::admin</code>.</li>
             <li>Snapshot the old DB VM.</li>
@@ -160,7 +128,7 @@ sudo systemctl restart ri.service</code></pre>
         </div>
 
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.4 File Store Migration</h3>
+          <h3 class="text-lg font-semibold">2.2 File Store Migration</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
             <li>Old path: Config -> General -> Settings -> File Storage.</li>
             <li>New path: VM console Main Menu 6 -> Connection Info.</li>
@@ -169,7 +137,7 @@ sudo systemctl restart ri.service</code></pre>
         </div>
 
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.5 Cut Over</h3>
+          <h3 class="text-lg font-semibold">2.3 Cut Over</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
             <li>Preferred: re IP the new appliances to production IPs. Alternative: update DNS.</li>
             <li>Shutdown order for old: ARMS -> DSS -> DB.</li>
@@ -178,7 +146,7 @@ sudo systemctl restart ri.service</code></pre>
         </div>
 
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.6 Upgrade to Latest LTS</h3>
+          <h3 class="text-lg font-semibold">2.4 Upgrade to Latest LTS</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
             <li>After cutover validation, upgrade to the latest LTS.</li>
             <li>Re run validation in section 5.</li>
@@ -203,7 +171,7 @@ sudo systemctl restart ri.service</code></pre>
 
       <section id="alternate" class="space-y-6">
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">4.</span> Alternate Migration (JP Script)</h2>
+          <span class="mr-2">4.</span>Migration (AWS Script)</h2>
         <div class="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
           <p class="font-medium">Run order</p>
           <p>Run the DB Fix script on the new DB first. Only then run the curl and migrate commands below.</p>
