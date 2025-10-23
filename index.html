@@ -62,8 +62,9 @@
 
         <div class="space-y-4">
           <h3 class="text-lg font-semibold">2.1 Stop RI on old appliances</h3>
-          <p>Run on old ARMS, DSS, and DB.</p>
-          <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>system rapididentity stop</code></pre>
+          <p>Stop RI on old ARMS, DSS, and DB.</p>
+          <p>This can be done with the first option in the CLI interface or by running this command:</p>
+          <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>service rapididentity stop</code></pre>
         </div>
 
         <div class="space-y-4">
@@ -208,7 +209,7 @@ system rapididentity start</code></pre>
           <div>
             <h3 class="font-semibold mb-2">Cheat sheet</h3>
             <pre class="bg-gray-100 p-3 rounded text-sm whitespace-pre-wrap"><code>system rapididentity stop
-system rapididentity start
+service rapididentity start
 psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"</code></pre>
           </div>
         </div>
