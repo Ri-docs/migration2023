@@ -13,11 +13,9 @@
           RapidIdentity Migration Cheat Sheet
         </h1>
         <nav class="hidden md:flex space-x-6 text-sm font-medium">
-          <a href="#pre" class="hover:underline">Pre-Migration</a>
+          <a href="#pre" class="hover:underline">Pre‑Migration</a>
           <a href="#planning" class="hover:underline">Planning</a>
           <a href="#execution" class="hover:underline">Live&nbsp;Execution</a>
-          <a href="#lessons" class="hover:underline">Lessons&nbsp;Learned</a>
-          <a href="#alternate" class="hover:underline">JP&nbsp;Script&nbsp;Method</a>
           <a href="#validation" class="hover:underline">Validation</a>
           <a href="#troubleshooting" class="hover:underline">Troubleshooting</a>
         </nav>
@@ -26,17 +24,22 @@
 
     <main class="max-w-4xl mx-auto px-4 py-12 space-y-20">
       <section id="pre" class="space-y-6">
+        <div class="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-800">
+          <p class="font-semibold">Mandatory</p>
+          <p>Run the DB Fix script on the <strong>new DB</strong> before <em>any</em> download or curl. The CLI can show “DB running” when Postgres isn’t installed. Do not proceed until this script completes.</p>
+        </div>
+
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">0.</span> Pre-Migration
+          <span class="mr-2">0.</span> Pre‑Migration
         </h2>
         <ul class="list-disc list-inside space-y-2">
-          <li>Create new VMs for ARMS, DSS, and DB using the RI ISO. During install choose "Other versions" and select the exact production build. Assign temporary IPs to each new VM.</li>
-          <li>All old and new VMs must run the same RI build before migration.</li>
-          <li>Create snapshots of every old VM. These are your rollback points.</li>
+          <li>Create new VMs for ARMS, DSS, and DB using the RI ISO. During install choose “Other versions” and select the exact production build. Assign temporary IPs to each new VM.</li>
+          <li>Old and new appliances must run the same <strong>RI build</strong> before migration.</li>
+          <li>Create snapshots of every old VM (rollback points).</li>
           <li>Gather admin credentials, DB password, and vault secrets.</li>
-          <li>Record current IPs, subnets (usually <code>/24</code>; appliance defaults to <code>/8</code>), hostnames, and gateways.</li>
-          <li>Prepare an old-to-new server mapping list with hostnames and IPs.</li>
-          <li>Determine the DB version on the DB host:
+          <li>Record current IPs, masks (usually <code>/24</code>; appliance defaults to <code>/8</code>), hostnames, gateways.</li>
+          <li>Prepare an old→new server mapping list with hostnames and IPs.</li>
+          <li>Determine the DB version (on the DB host):
             <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"</code></pre>
           </li>
         </ul>
@@ -85,156 +88,119 @@ chmod 550 serviceCmd.sh</code></pre>
         </h2>
         <ol class="list-decimal list-inside space-y-4 pl-4">
           <li>
-            <p class="font-medium">High Level Flow</p>
-            <p>Version parity -> stop RI service on old appliances -> Configure network on new appliances (temp IPs) -> DB Fix on new DB -> DB migration -> File store migration -> Cutover (re IP) -> Validation -> Upgrade to latest LTS.</p>
+            <p class="font-medium">High‑Level Flow</p>
+            <p>Version parity → stop RI on old appliances (during cutover) → network on new appliances (temp IPs) → <strong>DB Fix on new DB</strong> → <strong>AWS script migration</strong> → file‑store copy (if needed) → cutover (re‑IP) → validation → upgrade to latest LTS.</p>
           </li>
           <li>
-            <p class="font-medium">Version and Role Alignment</p>
-            <p>Confirm builds and replicate appliance roles and capabilities from old to new.</p>
+            <p class="font-medium">Roles/Capabilities</p>
+            <p>With the script path, roles and most settings clone over automatically. Minimal manual alignment expected.</p>
           </li>
           <li>
-            <p class="font-medium">Network and Firewall Snapshot</p>
-            <p>Document rules and verify required traffic</p>
-          </li>
-          <li>
-            <p class="font-medium">Hosts File Strategy</p>
-            <p>If the old DB used <code>/etc/hosts</code> for <code>idautodb</code>, mirror on the new DB pointing to itself.</p>
+            <p class="font-medium">Network & Firewall</p>
+            <p>Ensure routing and required traffic (e.g., <code>5432/tcp</code>). Correct masks off the default <code>/8</code> if not intended.</p>
           </li>
         </ol>
       </section>
 
       <section id="execution" class="space-y-10">
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">2.</span> Live Execution
+          <span class="mr-2">2.</span> Live Execution (Script‑First)
         </h2>
 
-
+        <div class="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-800">
+          <p class="font-medium">Order matters</p>
+          <p>Run the <strong>DB Fix</strong> on the new DB first. Then use the AWS migration script below. This path automates ~99% (settings, DB, services) and typically avoids schema issues.</p>
+        </div>
 
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.1 Database Migration</h3>
+          <h3 class="text-lg font-semibold">2.1 Migration using AWS script (Primary)</h3>
           <ol class="list-decimal list-inside space-y-3 pl-4">
-            <li>Log in to Portal as <code>idauto::admin</code>.</li>
-            <li>Snapshot the old DB VM.</li>
-            <li>Portal -> Config -> Systems -> Migrate Database -> Add Source and point to the old DB.</li>
-            <li>Get the DB password from Status -> Advanced -> rapidIdentity.properties.</li>
-            <li>Select all modules except Audit and start the migration.</li>
-            <li>If errors occur:
-              <ul class="list-disc list-inside ml-4 space-y-1">
-                <li>Verify subnet mask and correct if <code>/8</code> is not intended.</li>
-                <li>If schema mismatch, run Legacy Schema Remediation and retry.</li>
-              </ul>
+            <li>On the <strong>new DB</strong>, download & unpack:
+              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>cd /root
+curl https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.tar.gz | tar xvz</code></pre>
+            </li>
+            <li>Migrate DB from the <strong>old DB</strong> to the <strong>new DB</strong>:
+              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>./migrate-appliance.sh --src-host=&lt;OLD-DB-IP&gt; --target-db-host=localhost --migrate-db</code></pre>
+            </li>
+            <li>Migrate ARMS/DSS to their new appliances:
+              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>./migrate-appliance.sh --src-host=&lt;OLD-ARMS-IP&gt;
+./migrate-appliance.sh --src-host=&lt;OLD-DSS-IP&gt;</code></pre>
+              <p class="text-sm text-gray-600">Ensure <code>/etc/hosts</code> on each new appliance maps <code>idautodb</code> → new DB IP.</p>
+            </li>
+            <li>Verify service health locally:
+              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>pg_isready -h 127.0.0.1 -p 5432
+psql idautodb idautoAdmin -t -A -c "select 1"</code></pre>
             </li>
           </ol>
         </div>
 
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.2 File Store Migration</h3>
+          <h3 class="text-lg font-semibold">2.2 File‑Store (if not handled)</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
-            <li>Old path: Config -> General -> Settings -> File Storage.</li>
-            <li>New path: VM console Main Menu 6 -> Connection Info.</li>
-            <li>Copy old to new and point the new UI to the new share.</li>
+            <li>Old path: Config → General → Settings → File Storage.</li>
+            <li>New path: VM console Main Menu 6 → Connection Info.</li>
+            <li>Copy old → new and confirm the new UI points to the new share.</li>
           </ol>
         </div>
 
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.3 Cut Over</h3>
+          <h3 class="text-lg font-semibold">2.3 Cutover</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
-            <li>Preferred: re IP the new appliances to production IPs. Alternative: update DNS.</li>
-            <li>Shutdown order for old: ARMS -> DSS -> DB.</li>
-            <li>Boot order for new: DB -> DSS -> ARMS/Portal.</li>
+            <li>Shutdown order for old: ARMS → DSS → DB.</li>
+            <li>Re‑IP the new appliances to production (or update DNS).</li>
+            <li>Boot order for new: DB → DSS → ARMS/Portal.</li>
           </ol>
         </div>
 
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.4 Upgrade to Latest LTS</h3>
-          <ol class="list-decimal list-inside space-y-2 pl-4">
-            <li>After cutover validation, upgrade to the latest LTS.</li>
-            <li>Re run validation in section 5.</li>
-          </ol>
-        </div>
-      </section>
-
-      <section id="lessons" class="space-y-6">
-        <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">3.</span> Lessons Learned
-        </h2>
-        <ul class="list-disc list-inside space-y-2">
-          <li>The CLI may show DB running when Postgres is not installed. Run the DB Fix script first on new DB, then verify with psql.</li>
-          <li>Replicate roles and capabilities early to avoid UI 500s.</li>
-          <li>Default <code>/8</code> masks break routing in most on prem networks. Prefer <code>/24</code>.</li>
-          <li>Open <code>5432/tcp</code> between nodes and verify with <code>pg_isready</code> or <code>psql</code>.</li>
-          <li>Old DBs often trigger schema mismatches. Run Legacy Schema Remediation.</li>
-          <li>After copying the file store, ensure the new appliances point to the new share.</li>
-          <li>Disable SSO temporarily if login loops occur after cutover.</li>
-        </ul>
-      </section>
-
-      <section id="alternate" class="space-y-6">
-        <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">4.</span>Migration (AWS Script)</h2>
-        <div class="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
-          <p class="font-medium">Run order</p>
-          <p>Run the DB Fix script on the new DB first. Only then run the curl and migrate commands below.</p>
-        </div>
-        <ol class="list-decimal list-inside space-y-4 pl-4">
-          <li>
-            <p class="font-medium">Download and Unpack</p>
-            <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>cd /root
-curl https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.tar.gz | tar xvz</code></pre>
-          </li>
-          <li>
-            <p class="font-medium">Run on the New DB</p>
-            <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>./migrate-appliance.sh --src-host=&lt;OLD-DB-IP&gt; --target-db-host=localhost --migrate-db</code></pre>
-          </li>
-          <li>
-            <p class="font-medium">Run on Other Appliances</p>
-            <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>./migrate-appliance.sh --src-host=&lt;OLD-ARMS-IP&gt;</code></pre>
-            <p>Ensure <code>/etc/hosts</code> on each new appliance points <code>idautodb</code> to the new DB IP.</p>
-          </li>
-          <li>
-            <p class="font-medium">Re IP and Start Sequence</p>
-            <ol class="list-decimal list-inside pl-4 space-y-1">
-              <li>Shut down old appliances (ARMS -> DSS -> DB).</li>
-              <li>Assign production IPs to the new appliances or update DNS.</li>
-              <li>Boot order: DB -> DSS -> ARMS -> Portal.</li>
+        <details class="group border border-gray-200 rounded-lg">
+          <summary class="cursor-pointer select-none px-3 py-2 font-medium text-sky-700">Alternative: UI‑driven migration</summary>
+          <div class="px-3 pb-3 mt-2 space-y-4">
+            <ol class="list-decimal list-inside space-y-3 pl-4">
+              <li>Portal → Config → Systems → Migrate Database → Add Source (old DB).</li>
+              <li>Get DB password from Status → Advanced → rapidIdentity.properties.</li>
+              <li>Select all modules except <em>Audit</em>; start migration.</li>
+              <li>If “schema mismatch” appears, export <em>Database Configuration Tables</em> on old, place on new as <code>/var/sftp/files/configdb.sql</code>, then:
+                <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin &lt; /var/sftp/files/configdb.sql
+sudo systemctl restart ri.service</code></pre>
+              </li>
             </ol>
-          </li>
-        </ol>
+          </div>
+        </details>
       </section>
 
       <section id="validation" class="space-y-6">
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">5.</span> Validation
+          <span class="mr-2">3.</span> Validation
         </h2>
         <ol class="list-decimal list-inside space-y-2 pl-4">
-          <li>Load Portal and Connect. Verify login and representative workflows.</li>
-          <li>Monitor logs on all new nodes for errors.</li>
-          <li>Confirm DNS or production IPs are correct and reachable. Retire old VMs.</li>
-          <li>After upgrading to the latest LTS, re run these checks.</li>
+          <li>Portal & Connect login works.</li>
+          <li>Representative workflows (actionsets) run successfully.</li>
+          <li>ARMS and DSS reachable over HTTPS; logs clean.</li>
+          <li>DNS or production IPs correct and reachable; retire old VMs.</li>
         </ol>
       </section>
 
       <section id="troubleshooting" class="space-y-6 pb-16">
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">6.</span> Troubleshooting and Quick Commands
+          <span class="mr-2">4.</span> Troubleshooting & Quick Commands
         </h2>
         <div class="grid md:grid-cols-2 gap-8">
           <div>
             <h3 class="font-semibold mb-2">Common Issues</h3>
             <ul class="list-disc list-inside space-y-2">
-              <li>DB will not start. Retrieve the password from <code>rapidIdentity.properties</code>.</li>
-              <li>Portal 404 or 500. DB down or hosts file mis pointed.</li>
-              <li>Schema mismatch. Run Legacy Schema Remediation and retry migration.</li>
-              <li>Port 5432 blocked. Verify with <code>pg_isready</code> or <code>psql</code>.</li>
-              <li>SSO loops. Disable SSO temporarily and restart RI.</li>
+              <li>DB “running” in CLI but PG not installed → run the <strong>DB Fix</strong> first, then re‑run the migration script.</li>
+              <li>Schema mismatch (UI path) → config schema export/import on new DB; script path usually avoids this.</li>
+              <li>Routing/mask issues → correct default <code>/8</code> to intended <code>/24</code>.</li>
+              <li>Port 5432 blocked → verify with <code>pg_isready</code> or local <code>psql</code>.</li>
+              <li>SSO loops → disable SSO temporarily; restart RI.</li>
             </ul>
           </div>
           <div>
-            <h3 class="font-semibold mb-2">Cheat Sheet Commands</h3>
+            <h3 class="font-semibold mb-2">Cheat‑Sheet</h3>
             <pre class="bg-gray-100 p-3 rounded text-sm whitespace-pre-wrap"><code>sudo systemctl restart ri.service
-psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"
 pg_isready -h 127.0.0.1 -p 5432
-psql idautodb idautoAdmin &lt; /var/sftp/files/configdb.sql</code></pre>
+psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"
+psql idautodb idautoAdmin -t -A -c "select 1"</code></pre>
           </div>
         </div>
       </section>
