@@ -26,21 +26,61 @@
 
     <main class="max-w-4xl mx-auto px-4 py-12 space-y-20">
       <section id="pre" class="space-y-6">
+        <div class="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-800">
+          <p class="font-semibold">Mandatory</p>
+          <p>On the new DB appliance, run the DB Fix script below before any downloads or curl commands. The CLI may show DB as running even when Postgres is not installed. Do not proceed until the script completes.</p>
+        </div>
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
           <span class="mr-2">0.</span> Pre-Migration
         </h2>
         <ul class="list-disc list-inside space-y-2">
           <li>Create new VMs for ARMS, DSS, and DB using the RI ISO. During install choose "Other versions" and select the exact production build. Assign temporary IPs to each new VM.</li>
-          <li>All old and new VMs must run the same RapidIdentity build.</li>
+          <li>All old and new VMs must run the same RI build before migration.</li>
           <li>Create snapshots of every old VM. These are your rollback points.</li>
           <li>Gather admin credentials, DB password, and vault secrets.</li>
           <li>Record current IPs, subnets (usually <code>/24</code>; appliance defaults to <code>/8</code>), hostnames, and gateways.</li>
           <li>Prepare an old-to-new server mapping list with hostnames and IPs.</li>
-          <li>Plan to apply the required DB prerequisite on the new DB. It is required with the current ISO.</li>
           <li>Determine the DB version on the DB host:
             <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"</code></pre>
           </li>
         </ul>
+
+        <details class="group border border-red-200 rounded-lg">
+          <summary class="cursor-pointer select-none px-3 py-2 font-medium text-red-700">DB Fix script (run first on NEW DB, before any curl)</summary>
+          <div class="px-3 pb-3 mt-2">
+            <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>#!/bin/bash
+echo "Updating Mysql gpg key"
+rpm --import https://repo.mysql.com/RPM-GPG-KEY-mysql-2023
+echo "Updating PostgreSQL gpg key"
+/bin/yum --disablerep=* -y install https://download.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm
+/bin/yum updateinfo -y
+/root/ApplianceSetupScript.sh
+echo "Updating PostgreSQL appliance menus"
+cd /var/opt/idauto/menu/2020.0
+mv menu.sh menu.bak
+cat menu.bak | sed '/9/s//15/g' > menu.sh
+chown root.idauto menu.sh
+chmod 550 menu.sh
+cd /var/opt/idauto/admin/2020.0/scripts/config/
+mv installPostgreSQL.sh installPostgreSQL.bak
+cat installPostgreSQL.bak | sed '/9/s//15/g' > installPostgreSQL.sh
+chown root.idauto installPostgreSQL.sh
+chmod 550 installPostgreSQL.sh
+mv uninstallPostgreSQL.sh uninstallPostgreSQL.bak
+cat uninstallPostgreSQL.bak | sed '/9/s//15/g' > uninstallPostgreSQL.sh
+chown root.idauto uninstallPostgreSQL.sh
+chmod 550 uninstallPostgreSQL.sh
+mv serviceCmd.sh serviceCmd.bak
+cat serviceCmd.bak | sed '/9/s//15/g' > serviceCmd.sh
+chown root.idauto serviceCmd.sh
+chmod 550 serviceCmd.sh</code></pre>
+            <div class="mt-2 text-sm text-gray-700">
+              <p>Save as <code>/root/db-fix.sh</code>, then run:</p>
+              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>chmod +x /root/db-fix.sh
+/root/db-fix.sh</code></pre>
+            </div>
+          </div>
+        </details>
       </section>
 
       <section id="planning" class="space-y-6">
@@ -50,7 +90,7 @@
         <ol class="list-decimal list-inside space-y-4 pl-4">
           <li>
             <p class="font-medium">High Level Flow</p>
-            <p>Version parity -> DB prerequisite on new DB -> Legacy schema remediation (if needed) -> DB migration -> File store migration -> Cutover (re IP) -> Validation -> Upgrade to latest LTS.</p>
+            <p>Version parity -> DB Fix on new DB -> DB install/upgrade on new DB -> Legacy schema remediation (if needed) -> DB migration -> File store migration -> Cutover (re IP) -> Validation -> Upgrade to latest LTS.</p>
           </li>
           <li>
             <p class="font-medium">Version and Role Alignment</p>
@@ -72,62 +112,42 @@
           <span class="mr-2">2.</span> Live Execution
         </h2>
 
+        <div class="rounded-lg border border-amber-300 bg-amber-50 p-4 text-amber-800">
+          <p class="font-medium">Order matters</p>
+          <p>Run the DB Fix script on the new DB first. Then proceed with any downloads or migration scripts.</p>
+        </div>
+
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.1 DB Version Check and Service State</h3>
+          <h3 class="text-lg font-semibold">2.1 Install or Verify Postgres on New DB</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
-            <li>On the new DB, check the installed Postgres version:
+            <li>If Postgres is not installed, install it:
+              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>sh /var/opt/idauto/admin/2024.1/scripts/config/installPostgreSQL.sh</code></pre>
+            </li>
+            <li>Check version:
               <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"</code></pre>
             </li>
-            <li>Stop the RI application service from the appliance menu if instructed by the upgrade script.</li>
-          </ol>
-        </div>
-
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.2 Apply the DB Prerequisite (Required: Upgrade to PG15 on New DB)</h3>
-          <ol class="list-decimal list-inside space-y-2 pl-4">
-            <li>Get the DB password from Rapididentity -> Advanced -> Edit <code>rapididentity.properties</code> -> <code>db.password</code>.</li>
-            <li>Run:
-              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>sh /var/opt/idauto/admin/2024.1/scripts/config/upgradePostgresql.sh '&lt;installed_pg_major&gt;' '&lt;dbPassword&gt;'</code></pre>
-            </li>
-            <li>Verify:
-              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin -t -A -c "show server_version;"</code></pre>
-            </li>
-          </ol>
-
-          <details class="group border border-gray-200 rounded-lg">
-            <summary class="cursor-pointer select-none px-3 py-2 font-medium text-sky-700">Optional repo fix script (only if the upgrade script fails)</summary>
-            <div class="px-3 pb-3 mt-2">
-              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>#!/bin/bash
-set -e
-dbpass="$1"
-pgmajor="$2"
-if [ -z "$dbpass" ]; then echo "usage: $0 &lt;dbPassword&gt; [pgMajor]"; exit 1; fi
-if [ -z "$pgmajor" ]; then pgmajor=$(psql idautodb idautoAdmin -t -A -c "show server_version" | cut -d. -f1); fi
-/bin/yum --disablerep=* -y install https://download.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm
-/bin/yum updateinfo -y
-sh /var/opt/idauto/admin/2024.1/scripts/config/upgradePostgresql.sh "$pgmajor" "$dbpass"
+            <li>If major is not 15, upgrade on the new DB:
+              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>sh /var/opt/idauto/admin/2024.1/scripts/config/upgradePostgresql.sh '&lt;installed_pg_major&gt;' '&lt;dbPassword&gt;'
 psql idautodb idautoAdmin -t -A -c "show server_version;"</code></pre>
-            </div>
-          </details>
-        </div>
-
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.3 Legacy Schema Remediation</h3>
-          <p>Use this if the migration wizard reports a schema mismatch or if the old environment is from 2019.x.</p>
-          <ol class="list-decimal list-inside space-y-3 pl-4">
-            <li>Export <code>configdb.sql</code> from the old environment to <code>/var/sftp/files/configdb.sql</code>.</li>
-            <li>Place the file on the new DB at <code>/var/sftp/files/configdb.sql</code>.</li>
-            <li>Import:
-              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin &lt; /var/sftp/files/configdb.sql</code></pre>
-            </li>
-            <li>Restart RI on the new DB:
-              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>sudo systemctl restart ri.service</code></pre>
             </li>
           </ol>
         </div>
 
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.4 Database Migration</h3>
+          <h3 class="text-lg font-semibold">2.2 Legacy Schema Remediation</h3>
+          <p>Use if the migration shows schema mismatch or the old environment is 2019.x.</p>
+          <ol class="list-decimal list-inside space-y-3 pl-4">
+            <li>Export <code>configdb.sql</code> from old (Database Configuration Tables only).</li>
+            <li>Place the file on new DB at <code>/var/sftp/files/configdb.sql</code>.</li>
+            <li>Import and restart:
+              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin &lt; /var/sftp/files/configdb.sql
+sudo systemctl restart ri.service</code></pre>
+            </li>
+          </ol>
+        </div>
+
+        <div class="space-y-4">
+          <h3 class="text-lg font-semibold">2.3 Database Migration</h3>
           <ol class="list-decimal list-inside space-y-3 pl-4">
             <li>Log in to Portal as <code>idauto::admin</code>.</li>
             <li>Snapshot the old DB VM.</li>
@@ -144,7 +164,7 @@ psql idautodb idautoAdmin -t -A -c "show server_version;"</code></pre>
         </div>
 
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.5 File Store Migration</h3>
+          <h3 class="text-lg font-semibold">2.4 File Store Migration</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
             <li>Old path: Config -> General -> Settings -> File Storage.</li>
             <li>New path: VM console Main Menu 6 -> Connection Info.</li>
@@ -153,7 +173,7 @@ psql idautodb idautoAdmin -t -A -c "show server_version;"</code></pre>
         </div>
 
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.6 Cut Over</h3>
+          <h3 class="text-lg font-semibold">2.5 Cut Over</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
             <li>Preferred: re IP the new appliances to production IPs. Alternative: update DNS.</li>
             <li>Shutdown order for old: ARMS -> DSS -> DB.</li>
@@ -162,7 +182,7 @@ psql idautodb idautoAdmin -t -A -c "show server_version;"</code></pre>
         </div>
 
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.7 Upgrade to Latest LTS</h3>
+          <h3 class="text-lg font-semibold">2.6 Upgrade to Latest LTS</h3>
           <ol class="list-decimal list-inside space-y-2 pl-4">
             <li>After cutover validation, upgrade to the latest LTS.</li>
             <li>Re run validation in section 5.</li>
@@ -175,10 +195,10 @@ psql idautodb idautoAdmin -t -A -c "show server_version;"</code></pre>
           <span class="mr-2">3.</span> Lessons Learned
         </h2>
         <ul class="list-disc list-inside space-y-2">
-          <li>The UI can appear healthy while DB is down. Start DB first when testing.</li>
+          <li>The CLI may show DB running when Postgres is not installed. Run the DB Fix script first on new DB, then verify with psql.</li>
           <li>Replicate roles and capabilities early to avoid UI 500s.</li>
           <li>Default <code>/8</code> masks break routing in most on prem networks. Prefer <code>/24</code>.</li>
-          <li>Open <code>5432/tcp</code> between nodes and verify with <code>nmap</code> or <code>telnet</code>.</li>
+          <li>Open <code>5432/tcp</code> between nodes and verify with <code>pg_isready</code> or <code>psql</code>.</li>
           <li>Old DBs often trigger schema mismatches. Run Legacy Schema Remediation.</li>
           <li>After copying the file store, ensure the new appliances point to the new share.</li>
           <li>Disable SSO temporarily if login loops occur after cutover.</li>
@@ -188,7 +208,10 @@ psql idautodb idautoAdmin -t -A -c "show server_version;"</code></pre>
       <section id="alternate" class="space-y-6">
         <h2 class="text-xl font-semibold text-sky-700 flex items-center">
           <span class="mr-2">4.</span> Alternate Migration (JP Script)</h2>
-        <p class="mb-4">JP's <code>migrate-appliance.sh</code> can migrate data without the UI. The DB prerequisite on the new DB is still required with the current ISO.</p>
+        <div class="rounded-lg border border-red-200 bg-red-50 p-4 text-red-700">
+          <p class="font-medium">Run order</p>
+          <p>Run the DB Fix script on the new DB first. Only then run the curl and migrate commands below.</p>
+        </div>
         <ol class="list-decimal list-inside space-y-4 pl-4">
           <li>
             <p class="font-medium">Download and Unpack</p>
@@ -197,9 +220,7 @@ curl https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.ta
           </li>
           <li>
             <p class="font-medium">Run on the New DB</p>
-            <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>./migrate-appliance.sh --src-host=&lt;OLD-DB-IP&gt; \
-  --target-db-host=localhost \
-  --migrate-db</code></pre>
+            <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>./migrate-appliance.sh --src-host=&lt;OLD-DB-IP&gt; --target-db-host=localhost --migrate-db</code></pre>
           </li>
           <li>
             <p class="font-medium">Run on Other Appliances</p>
@@ -240,15 +261,15 @@ curl https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.ta
               <li>DB will not start. Retrieve the password from <code>rapidIdentity.properties</code>.</li>
               <li>Portal 404 or 500. DB down or hosts file mis pointed.</li>
               <li>Schema mismatch. Run Legacy Schema Remediation and retry migration.</li>
-              <li>Port 5432 blocked. Open the firewall and verify.</li>
+              <li>Port 5432 blocked. Verify with <code>pg_isready</code> or <code>psql</code>.</li>
               <li>SSO loops. Disable SSO temporarily and restart RI.</li>
             </ul>
           </div>
           <div>
             <h3 class="font-semibold mb-2">Cheat Sheet Commands</h3>
             <pre class="bg-gray-100 p-3 rounded text-sm whitespace-pre-wrap"><code>sudo systemctl restart ri.service
-nmap -p 5432 &lt;DB-IP&gt;
 psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"
+pg_isready -h 127.0.0.1 -p 5432
 psql idautodb idautoAdmin &lt; /var/sftp/files/configdb.sql</code></pre>
           </div>
         </div>
