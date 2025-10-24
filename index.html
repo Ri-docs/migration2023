@@ -201,14 +201,14 @@ system rapididentity start</code></pre>
           <div>
             <h3 class="font-semibold mb-2">Common issues</h3>
             <ul class="list-disc list-inside space-y-2">
-              <li>CLI shows DB running but Postgres is not installed. Run the DB Fix step then the migration script.</li>
+              <li>CLI shows DB running but Postgres is not installed. Roll back the appliances and run the DB Fix step then the migration script.</li>
               <li>Routing or mask issues. Correct the mask and retest.</li>
               <li>SSO loops. Disable SSO in rapididentity.properties and restart RI.</li>
             </ul>
           </div>
           <div>
             <h3 class="font-semibold mb-2">Cheat sheet</h3>
-            <pre class="bg-gray-100 p-3 rounded text-sm whitespace-pre-wrap"><code>system rapididentity stop
+            <pre class="bg-gray-100 p-3 rounded text-sm whitespace-pre-wrap"><code>service rapididentity stop
 service rapididentity start
 psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"</code></pre>
           </div>
