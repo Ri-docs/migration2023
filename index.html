@@ -42,6 +42,18 @@
           <li>Determine the DB version on the DB host:
             <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"</code></pre>
           </li>
+
+          <li>
+            Ensure you have a recent PostgreSQL backup available (recommended).
+            Backups are commonly stored here:
+            <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>/var/opt/idauto/backup/</code></pre>
+            The built-in backup script that generates these files is typically located under:
+            <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>/etc/cron.daily/</code></pre>
+
+            Quick checks:
+            <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>ls -lh /var/opt/idauto/backup/idautodb_pg_backup_*.sql.gz | tail
+ls -lh /etc/cron.daily/</code></pre>
+          </li>
         </ul>
       </section>
 
@@ -50,8 +62,11 @@
           <span class="mr-2">1.</span> Planning
         </h2>
         <ol class="list-decimal list-inside space-y-4 pl-4">
-          <li>High level flow: version parity, network on new appliances with temp IPs, stop RI on old appliances, update hosts file, DB Fix on new DB, migration by script, install file server, transfer IPs, validation, snapshots, upgrades.</li>
+          <li>High level flow: version parity, network on new appliances with temp IPs, stop RI on old appliances, update hosts file, DB Fix on new DB, migration by script, (optional) install file server, transfer IPs, validation, snapshots, upgrades.</li>
           <li>With the script path, roles and most settings clone over automatically.</li>
+          <li class="text-sm text-gray-700">
+            Note: ICMP/ping may be blocked by default (ex: CentOS firewall). Cluster join and migration success depend on TCP reachability to the DB (5432) and required cluster ports, not ping alone.
+          </li>
         </ol>
       </section>
 
@@ -75,7 +90,7 @@
         </div>
 
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.3 Download bundle and migrate</h3>
+          <h3 class="text-lg font-semibold">2.3 Download bundle and migrate (script path)</h3>
           <p>Run these two lines on all three new appliances.</p>
           <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>cd /root
 curl https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.tar.gz | tar xvz</code></pre>
@@ -129,19 +144,71 @@ chmod 550 serviceCmd.sh</code></pre>
             <li class="text-sm text-gray-700">Ensure each new appliance has a hosts entry mapping idautodb to the new DB ip before running these.</li>
           </ol>
 
-          <details class="group border border-gray-200 rounded-lg">
-            <summary class="cursor-pointer select-none px-3 py-2 font-medium text-sky-700">Alternative migration by UI</summary>
+          <div class="mt-8 space-y-4 border border-amber-200 bg-amber-50 rounded-lg p-4">
+            <h4 class="text-base font-semibold text-amber-900">Recommended workaround if DB migration is incomplete (missing SAML/LDAP/license/config)</h4>
+            <p class="text-sm text-amber-900">
+              If the script migration completes but key configuration tables are empty (example: <code>saml_idp</code>),
+              restore from a known-good PostgreSQL dump (<code>.sql.gz</code>). This is often more reliable than UI migration.
+            </p>
+
+            <ol class="list-decimal list-inside space-y-3 pl-4 text-sm">
+              <li>
+                <span class="font-medium">On the OLD DB host:</span> generate a fresh DB backup using the built-in cron backup script (usually in <code>/etc/cron.daily/</code>).
+                Backups are written under:
+                <pre class="bg-white p-2 rounded text-sm whitespace-pre-wrap border"><code>/var/opt/idauto/backup/</code></pre>
+                Verify a recent file exists:
+                <pre class="bg-white p-2 rounded text-sm whitespace-pre-wrap border"><code>ls -lh /var/opt/idauto/backup/idautodb_pg_backup_*.sql.gz | tail</code></pre>
+              </li>
+              <li>
+                <span class="font-medium">Transfer</span> the <code>.sql.gz</code> file to the NEW DB host (location does not matter). Example:
+                <pre class="bg-white p-2 rounded text-sm whitespace-pre-wrap border"><code>scp /var/opt/idauto/backup/idautodb_pg_backup_*.sql.gz root@&lt;NEW-DB-IP&gt;:/root/files/</code></pre>
+              </li>
+              <li>
+                <span class="font-medium">Stop RI</span> on any nodes that connect to the NEW DB (prevents active connections during restore):
+                <pre class="bg-white p-2 rounded text-sm whitespace-pre-wrap border"><code>service rapididentity stop</code></pre>
+              </li>
+              <li>
+                <span class="font-medium">On the NEW DB host:</span> restore the dump into <code>idautodb</code> and capture a log:
+                <pre class="bg-white p-2 rounded text-sm whitespace-pre-wrap border"><code>gunzip -c /var/opt/idauto/backup/idautodb_pg_backup_XXXXXX.sql.gz | psql idautodb idautoAdmin 2&gt;&amp;1 | tee /tmp/idautodb_restore.log</code></pre>
+                <p class="text-xs text-gray-700 mt-2">
+                  Note: This restore output may include "does not exist" errors early in the process due to backup files being created with <code>--clean</code>
+                  (DROP statements for objects that are not present yet). This is expected; focus on whether the restore completes and whether the target tables contain data.
+                </p>
+              </li>
+              <li>
+                <span class="font-medium">Validate key config tables</span> now exist on the NEW DB:
+                <pre class="bg-white p-2 rounded text-sm whitespace-pre-wrap border"><code>psql idautodb idautoAdmin -c "select count(*) from saml_idp;"</code></pre>
+              </li>
+              <li>
+                <span class="font-medium">Start RI</span> back up on nodes:
+                <pre class="bg-white p-2 rounded text-sm whitespace-pre-wrap border"><code>service rapididentity start</code></pre>
+              </li>
+            </ol>
+          </div>
+
+          <details class="group border border-gray-200 rounded-lg mt-6">
+            <summary class="cursor-pointer select-none px-3 py-2 font-medium text-sky-700">
+              UI migration (last resort / not recommended)
+            </summary>
             <div class="px-3 pb-3 mt-2 space-y-4">
+              <div class="border border-red-200 bg-red-50 rounded-lg p-3 text-sm text-red-900">
+                <p class="font-medium">Not recommended for primary migration.</p>
+                <p>
+                  UI migration can be inconsistent and may result in partial or missing configuration data. Prefer the script path,
+                  and if config tables are missing, use the <span class="font-medium">PostgreSQL dump restore workaround</span> above.
+                </p>
+              </div>
+
               <ol class="list-decimal list-inside space-y-3 pl-4">
                 <li>Open Portal and sign in as idauto::admin.</li>
-                <li>Go to Configuration > Systems > Migrate Database > Add Source and point to the old DB.</li>
-                <li>Get the DB password from Status > Advanced > rapidIdentity.properties.</li>
+                <li>Go to Configuration &gt; Systems &gt; Migrate Database &gt; Add Source and point to the old DB.</li>
+                <li>Get the DB password from Status &gt; Advanced &gt; rapidIdentity.properties.</li>
                 <li>Select all modules except Audit and start the migration.</li>
                 <li>If a schema mismatch appears export Database Configuration Tables on old, place the file on new at
                   <code>/var/sftp/files/configdb.sql</code> then run:
                   <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin &lt; /var/sftp/files/configdb.sql
-system rapididentity stop
-system rapididentity start</code></pre>
+service rapididentity stop
+service rapididentity start</code></pre>
                 </li>
               </ol>
             </div>
@@ -149,13 +216,17 @@ system rapididentity start</code></pre>
         </div>
 
         <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.4 Install File Server</h3>
+          <h3 class="text-lg font-semibold">2.4 Install File Server (optional)</h3>
+          <p>
+            Optional: install File Server if you need the appliance SFTP drop location (example: <code>/var/sftp/files/</code>) for transferring files like <code>configdb.sql</code>.
+            If you are transferring DB backups by scp/sftp another way, this step can be skipped.
+          </p>
           <p>In the terminal UI select File Server and install. If prompted set a password.</p>
         </div>
 
         <div class="space-y-4">
           <h3 class="text-lg font-semibold">2.5 Pre cutover checks</h3>
-          <p>Confirm every new appliance will start and join the cluster. Check logs or disable SSO in rapididentity.properties to log in. In the UI you can verify at Configuration > Systems > Cluster. Look for Successfully join cluster or the license sequence in logs.</p>
+          <p>Confirm every new appliance will start and join the cluster. Check logs or disable SSO in rapididentity.properties to log in. In the UI you can verify at Configuration &gt; Systems &gt; Cluster. Look for Successfully join cluster or the license sequence in logs.</p>
         </div>
 
         <div class="space-y-4">
@@ -179,7 +250,7 @@ system rapididentity start</code></pre>
           <li>Run representative workflows and check logs on all nodes.</li>
           <li>DNS or production IPs resolve to the new appliances.</li>
           <li>Snapshot the new appliances.</li>
-          <li>Go to Configuration > System > Updates > Custom Update and enter:
+          <li>Go to Configuration &gt; System &gt; Updates &gt; Custom Update and enter:
             <div class="mt-2">
               <div class="grid grid-cols-1 gap-2">
                 <div class="flex items-start gap-2"><span class="w-28 font-medium">Filename</span><span>rapididentity-2020.1.5-7597.zip</span></div>
@@ -204,13 +275,40 @@ system rapididentity start</code></pre>
               <li>CLI shows DB running but Postgres is not installed. Roll back the appliances and run the DB Fix step then the migration script.</li>
               <li>Routing or mask issues. Correct the mask and retest.</li>
               <li>SSO loops. Disable SSO in rapididentity.properties and restart RI.</li>
+              <li>
+                If you accidentally run <code>gunzip -c file.sql.gz</code> without piping into <code>psql</code>, the terminal will print SQL.
+                Press <code>Ctrl+C</code>, then run <code>reset</code> or <code>clear</code>.
+              </li>
+              <li>
+                Restore logs may contain errors like <code>relation ... does not exist</code> / <code>does not exist</code>.
+                This is often expected when the dump was created with <code>--clean</code> (DROP statements).
+                Focus on whether the restore completes and whether the target tables contain data.
+              </li>
             </ul>
           </div>
           <div>
             <h3 class="font-semibold mb-2">Cheat sheet</h3>
             <pre class="bg-gray-100 p-3 rounded text-sm whitespace-pre-wrap"><code>service rapididentity stop
 service rapididentity start
-psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"</code></pre>
+
+# DB version
+psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"
+
+# Where the daily backup script usually lives
+ls -lh /etc/cron.daily/
+
+# Where backups commonly land
+ls -lh /var/opt/idauto/backup/idautodb_pg_backup_*.sql.gz | tail
+
+# Recommended restore from .sql.gz backup (workaround)
+gunzip -c /var/opt/idauto/backup/idautodb_pg_backup_XXXXXX.sql.gz | psql idautodb idautoAdmin 2>&1 | tee /tmp/idautodb_restore.log
+
+# Optional: review errors (expect some "does not exist" noise due to --clean)
+grep -n "ERROR:" /tmp/idautodb_restore.log | head -n 50
+grep -n "ERROR:" /tmp/idautodb_restore.log | grep -v "does not exist" | head -n 50
+
+# Verify config exists (example)
+psql idautodb idautoAdmin -c "select count(*) from saml_idp;"</code></pre>
           </div>
         </div>
       </section>
