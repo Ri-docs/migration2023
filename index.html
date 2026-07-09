@@ -1,323 +1,320 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RapidIdentity On-Prem Migration Guide</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-  </head>
-  <body class="bg-gray-50 text-gray-800 antialiased">
-    <header class="bg-sky-700 text-white shadow">
-      <div class="max-w-7xl mx-auto flex items-center justify-between px-4 py-6">
-        <h1 class="text-2xl font-semibold tracking-wide">
-          RapidIdentity Migration Cheat Sheet
-        </h1>
-        <nav class="hidden md:flex space-x-6 text-sm font-medium">
-          <a href="#pre" class="hover:underline">Pre Migration</a>
-          <a href="#planning" class="hover:underline">Planning</a>
-          <a href="#migration" class="hover:underline">Migration</a>
-          <a href="#validation" class="hover:underline">Validation</a>
-          <a href="#troubleshooting" class="hover:underline">Troubleshooting</a>
-        </nav>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>RapidIdentity 2023 On-Prem Migration</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: #ffffff;
+      color: #111111;
+      font-family: Arial, Helvetica, sans-serif;
+      line-height: 1.5;
+    }
+
+    .page {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 36px 28px 48px;
+    }
+
+    h1 {
+      font-size: 24px;
+      margin: 0 0 24px;
+      font-weight: 700;
+    }
+
+    h2 {
+      font-size: 18px;
+      margin: 28px 0 12px;
+      font-weight: 700;
+    }
+
+    h3 {
+      font-size: 15px;
+      margin: 20px 0 10px;
+      font-weight: 700;
+    }
+
+    p {
+      margin: 8px 0;
+    }
+
+    ol, ul {
+      margin: 8px 0 14px 22px;
+    }
+
+    li {
+      margin: 6px 0;
+    }
+
+    .note {
+      margin: 12px 0;
+      padding: 10px 12px;
+      border: 1px solid #d9d9d9;
+      background: #fafafa;
+    }
+
+    .warning {
+      margin: 12px 0;
+      padding: 10px 12px;
+      border: 1px solid #e0c46b;
+      background: #fff9df;
+    }
+
+    pre {
+      margin: 10px 0 16px;
+      padding: 12px;
+      border: 1px solid #d9d9d9;
+      background: #f7f7f7;
+      overflow-x: auto;
+    }
+
+    code {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 13px;
+      overflow-wrap: anywhere;
+    }
+
+    pre code {
+      white-space: pre;
+      overflow-wrap: normal;
+    }
+
+    .section {
+      margin-bottom: 28px;
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <h1>RapidIdentity 2023 On-Prem Migration</h1>
+
+    <div class="section">
+      <h2>Scope</h2>
+
+      <div class="note">
+        Use this guide for older on-prem appliance replacement work where new DB, ARMS/Portal, and DSS/Connect appliances are built on the same RapidIdentity version as the source environment before migration.
       </div>
-    </header>
 
-    <main class="max-w-4xl mx-auto px-4 py-12 space-y-20">
-      <section id="pre" class="space-y-6">
-        <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">0.</span> Pre Migration
-        </h2>
-        <ul class="list-disc list-inside space-y-2">
-          <li>
-            Send the ISO link to the customer and ask them to build new ARMS, DSS, and DB VMs using the same RI build as production.
-            <a class="text-sky-700 underline" href="https://idauto.rapididentity.com/ui/files/59d8e000-385d-41b4-88b7-d7887455f79e" target="_blank" rel="noopener">Get the latest ISO</a>
-            It is under the folder named Appliances.
-          </li>
-          <li>Create new VMs for ARMS, DSS, and DB. During install choose Other versions and select the exact production build. Assign temporary IPs.</li>
-          <li>Old and new appliances must run the same RI build before migration.</li>
-          <li>Create snapshots of every old VM.</li>
-          <li>Gather admin credentials, DB password, and any vault secrets.</li>
-          <li>Record current IPs, masks, hostnames, and gateways.</li>
-          <li>Prepare an old to new server mapping list with hostnames and IPs.</li>
-          <li>Determine the DB version on the DB host:
-            <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"</code></pre>
-          </li>
+      <p>This flow is intended for migrations from older RapidIdentity appliances, such as 2019-era environments, to a replacement appliance set that can then be upgraded after validation.</p>
+    </div>
 
-          <li>
-            Ensure you have a recent PostgreSQL backup available (recommended).
-            Backups are commonly stored here:
-            <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>/var/opt/idauto/backup/</code></pre>
-            The built-in backup script that generates these files is typically located under:
-            <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>/etc/cron.daily/</code></pre>
+    <div class="section">
+      <h2>Before the maintenance window</h2>
 
-            Quick checks:
-            <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>ls -lh /var/opt/idauto/backup/idautodb_pg_backup_*.sql.gz | tail
-ls -lh /etc/cron.daily/</code></pre>
-          </li>
-        </ul>
-      </section>
+      <ol>
+        <li>Confirm the source RapidIdentity version and the supported target appliance ISO/build.</li>
+        <li>Create new DB, ARMS/Portal, and DSS/Connect VMs using the same RapidIdentity build as the source environment.</li>
+        <li>Assign temporary IP addresses to the new appliances.</li>
+        <li>Record source and target hostnames, IP addresses, CIDR masks, gateways, DNS servers, and appliance roles.</li>
+        <li>Snapshot each source appliance before making changes.</li>
+        <li>Gather the appliance admin credentials, database password, SFTP password, and any vault-managed secrets required by the runbook.</li>
+        <li>Confirm a recent PostgreSQL backup exists on the source DB appliance.</li>
+      </ol>
 
-      <section id="planning" class="space-y-6">
-        <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">1.</span> Planning
-        </h2>
-        <ol class="list-decimal list-inside space-y-4 pl-4">
-          <li>High level flow: version parity, network on new appliances with temp IPs, stop RI on old appliances, update hosts file, DB Fix on new DB, migration by script, (optional) install file server, transfer IPs, validation, snapshots, upgrades.</li>
-          <li>With the script path, roles and most settings clone over automatically.</li>
-          <li class="text-sm text-gray-700">
-            Note: ICMP/ping may be blocked by default (ex: CentOS firewall). Cluster join and migration success depend on TCP reachability to the DB (5432) and required cluster ports, not ping alone.
-          </li>
-        </ol>
-      </section>
+      <pre><code>psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"
+ls -lh /var/opt/idauto/backup/idautodb_pg_backup_*.sql.gz | tail</code></pre>
+    </div>
 
-      <section id="migration" class="space-y-10">
-        <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">2.</span> Migration
-        </h2>
+    <div class="section">
+      <h2>Target appliance preparation</h2>
 
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.1 Stop RI on old appliances</h3>
-          <p>Stop RI on old ARMS, DSS, and DB.</p>
-          <p>This can be done with the first option in the CLI interface or by running this command:</p>
-          <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>service rapididentity stop</code></pre>
-        </div>
+      <div class="note">
+        Run these steps after the new appliances are installed and before starting the migration script.
+      </div>
 
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.2 Hosts file on all new appliances</h3>
-          <p>Add this line on all three new appliances before the DB Fix and migration.</p>
-          <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>&lt;new-db-ip&gt; idautodb</code></pre>
-          <p class="text-sm text-gray-700">After Transfer IPs update the same line to map idautodb to the production DB ip (the old DB ip).</p>
-        </div>
+      <ol>
+        <li>Confirm the network profile on each target appliance uses the expected static IP, CIDR mask, gateway, and DNS servers.</li>
+        <li>Confirm the target appliances can reach each other on the migration network.</li>
+        <li>Update hosts resolution so <code>idautodb</code> points to the target DB appliance during migration.</li>
+      </ol>
 
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.3 Download bundle and migrate (script path)</h3>
-          <p>Run these two lines on all three new appliances.</p>
-          <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>cd /root
-curl https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.tar.gz | tar xvz</code></pre>
-          <ol class="list-decimal list-inside space-y-3 pl-4">
-            <li>Run the DB Fix on the new DB.</li>
-          </ol>
+      <h3>Target DB appliance</h3>
+      <p>Add <code>idautodb</code> to the localhost entry if the DB migration script will run locally on the DB appliance.</p>
 
-          <details class="group border border-gray-200 rounded-lg">
-            <summary class="cursor-pointer select-none px-3 py-2 font-medium text-sky-700">Show DB Fix script</summary>
-            <div class="px-3 pb-3 mt-2">
-              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>#!/bin/bash
-echo "Updating Mysql gpg key"
-rpm --import https://repo.mysql.com/RPM-GPG-KEY-mysql-2023
-echo "Updating PostgreSQL gpg key"
-/bin/yum --disablerep=* -y install https://download.postgresql.org/pub/repos/yum/reporpms/EL-7-x86_64/pgdg-redhat-repo-latest.noarch.rpm
-/bin/yum updateinfo -y
-/root/ApplianceSetupScript.sh
-echo "Updating PostgreSQL appliance menus"
-cd /var/opt/idauto/menu/2020.0
-mv menu.sh menu.bak
-cat menu.bak | sed '/11/s//15/g' > menu.sh
-chown root.idauto menu.sh
-chmod 550 menu.sh
-cd /var/opt/idauto/admin/2020.0/scripts/config/
-mv installPostgreSQL.sh installPostgreSQL.bak
-cat installPostgreSQL.bak | sed '/11/s//15/g' > installPostgreSQL.sh
-chown root.idauto installPostgreSQL.sh
-chmod 550 installPostgreSQL.sh
-mv uninstallPostgreSQL.sh uninstallPostgreSQL.bak
-cat uninstallPostgreSQL.bak | sed '/11/s//15/g' > uninstallPostgreSQL.sh
-chown root.idauto uninstallPostgreSQL.sh
-chmod 550 uninstallPostgreSQL.sh
-mv serviceCmd.sh serviceCmd.bak
-cat serviceCmd.bak | sed '/11/s//15/g' > serviceCmd.sh
-chown root.idauto serviceCmd.sh
-chmod 550 serviceCmd.sh</code></pre>
-              <p class="text-sm text-gray-700 mt-2">If PG major in a fresh sandbox is newer than 15 replace 15 with the newer major such as 16.</p>
-            </div>
-          </details>
+      <pre><code>127.0.0.1 localhost idautodb</code></pre>
 
-          <ol class="list-decimal list-inside space-y-3 pl-4">
-            <li>On the new DB:
-              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>./migrate-appliance.sh --src-host=&lt;OLD-DB-IP&gt; --target-db-host=localhost --migrate-db</code></pre>
-            </li>
-            <li>On the new ARMS:
-              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>./migrate-appliance.sh --src-host=&lt;OLD-ARMS-IP&gt; --target-db-host=idautodb --migrate-db</code></pre>
-            </li>
-            <li>On the new DSS:
-              <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>./migrate-appliance.sh --src-host=&lt;OLD-DSS-IP&gt; --target-db-host=idautodb --migrate-db</code></pre>
-            </li>
-            <li class="text-sm text-gray-700">Ensure each new appliance has a hosts entry mapping idautodb to the new DB ip before running these.</li>
-          </ol>
+      <h3>Target non-DB appliances</h3>
+      <p>Add the target DB appliance IP entry.</p>
 
-          <div class="mt-8 space-y-4 border border-amber-200 bg-amber-50 rounded-lg p-4">
-            <h4 class="text-base font-semibold text-amber-900">Recommended workaround if DB migration is incomplete (missing SAML/LDAP/license/config)</h4>
-            <p class="text-sm text-amber-900">
-              If the script migration completes but key configuration tables are empty (example: <code>saml_idp</code>),
-              restore from a known-good PostgreSQL dump (<code>.sql.gz</code>). This is often more reliable than UI migration.
-            </p>
+      <pre><code>&lt;target-db-ip&gt; idautodb</code></pre>
+    </div>
 
-            <ol class="list-decimal list-inside space-y-3 pl-4 text-sm">
-              <li>
-                <span class="font-medium">On the OLD DB host:</span> generate a fresh DB backup using the built-in cron backup script (usually in <code>/etc/cron.daily/</code>).
-                Backups are written under:
-                <pre class="bg-white p-2 rounded text-sm whitespace-pre-wrap border"><code>/var/opt/idauto/backup/</code></pre>
-                Verify a recent file exists:
-                <pre class="bg-white p-2 rounded text-sm whitespace-pre-wrap border"><code>ls -lh /var/opt/idauto/backup/idautodb_pg_backup_*.sql.gz | tail</code></pre>
-              </li>
-              <li>
-                <span class="font-medium">Transfer</span> the <code>.sql.gz</code> file to the NEW DB host (location does not matter). Example:
-                <pre class="bg-white p-2 rounded text-sm whitespace-pre-wrap border"><code>scp /var/opt/idauto/backup/idautodb_pg_backup_*.sql.gz root@&lt;NEW-DB-IP&gt;:/root/files/</code></pre>
-              </li>
-              <li>
-                <span class="font-medium">Stop RI</span> on any nodes that connect to the NEW DB (prevents active connections during restore):
-                <pre class="bg-white p-2 rounded text-sm whitespace-pre-wrap border"><code>service rapididentity stop</code></pre>
-              </li>
-              <li>
-                <span class="font-medium">On the NEW DB host:</span> restore the dump into <code>idautodb</code> and capture a log:
-                <pre class="bg-white p-2 rounded text-sm whitespace-pre-wrap border"><code>gunzip -c /var/opt/idauto/backup/idautodb_pg_backup_XXXXXX.sql.gz | psql idautodb idautoAdmin 2&gt;&amp;1 | tee /tmp/idautodb_restore.log</code></pre>
-                <p class="text-xs text-gray-700 mt-2">
-                  Note: This restore output may include "does not exist" errors early in the process due to backup files being created with <code>--clean</code>
-                  (DROP statements for objects that are not present yet). This is expected; focus on whether the restore completes and whether the target tables contain data.
-                </p>
-              </li>
-              <li>
-                <span class="font-medium">Validate key config tables</span> now exist on the NEW DB:
-                <pre class="bg-white p-2 rounded text-sm whitespace-pre-wrap border"><code>psql idautodb idautoAdmin -c "select count(*) from saml_idp;"</code></pre>
-              </li>
-              <li>
-                <span class="font-medium">Start RI</span> back up on nodes:
-                <pre class="bg-white p-2 rounded text-sm whitespace-pre-wrap border"><code>service rapididentity start</code></pre>
-              </li>
-            </ol>
-          </div>
+    <div class="section">
+      <h2>Repair yum repositories on the target DB appliance</h2>
 
-          <details class="group border border-gray-200 rounded-lg mt-6">
-            <summary class="cursor-pointer select-none px-3 py-2 font-medium text-sky-700">
-              UI migration (last resort / not recommended)
-            </summary>
-            <div class="px-3 pb-3 mt-2 space-y-4">
-              <div class="border border-red-200 bg-red-50 rounded-lg p-3 text-sm text-red-900">
-                <p class="font-medium">Not recommended for primary migration.</p>
-                <p>
-                  UI migration can be inconsistent and may result in partial or missing configuration data. Prefer the script path,
-                  and if config tables are missing, use the <span class="font-medium">PostgreSQL dump restore workaround</span> above.
-                </p>
-              </div>
+      <div class="warning">
+        Run this before installing or configuring PostgreSQL on older CentOS 7 based appliances. Stale MySQL and version-specific PGDG repositories can block appliance setup and RapidIdentity updates.
+      </div>
 
-              <ol class="list-decimal list-inside space-y-3 pl-4">
-                <li>Open Portal and sign in as idauto::admin.</li>
-                <li>Go to Configuration &gt; Systems &gt; Migrate Database &gt; Add Source and point to the old DB.</li>
-                <li>Get the DB password from Status &gt; Advanced &gt; rapidIdentity.properties.</li>
-                <li>Select all modules except Audit and start the migration.</li>
-                <li>If a schema mismatch appears export Database Configuration Tables on old, place the file on new at
-                  <code>/var/sftp/files/configdb.sql</code> then run:
-                  <pre class="bg-gray-100 p-2 rounded text-sm whitespace-pre-wrap"><code>psql idautodb idautoAdmin &lt; /var/sftp/files/configdb.sql
-service rapididentity stop
+      <ol>
+        <li>Download and run the repo cleanup script.</li>
+      </ol>
+
+      <pre><code>cd /var/tmp
+curl -fsSLO https://ri-docs-files.s3.us-east-1.amazonaws.com/ri-repo-fix.zip
+unzip -o ri-repo-fix.zip -d /var/tmp/ri-repo-fix
+chmod +x /var/tmp/ri-repo-fix/ri-repo-fix.sh
+bash /var/tmp/ri-repo-fix/ri-repo-fix.sh</code></pre>
+
+      <ol start="2">
+        <li>If the PostgreSQL install fails with <code>No package postgresql11-server available</code>, add the PostgreSQL 11 archive repository.</li>
+      </ol>
+
+      <pre><code>cat &gt; /etc/yum.repos.d/pgdg-11-archive.repo &lt;&lt;'EOF'
+[pgdg11-archive]
+name=PostgreSQL 11 archive for RHEL/CentOS 7 - x86_64
+baseurl=https://yum-archive.postgresql.org/11/redhat/rhel-7-x86_64
+enabled=1
+gpgcheck=1
+gpgkey=file:///etc/pki/rpm-gpg/PGDG-RPM-GPG-KEY-RHEL7
+EOF
+
+yum clean all
+yum makecache
+yum list available postgresql11-server postgresql11-contrib</code></pre>
+
+      <ol start="3">
+        <li>Return to the appliance PostgreSQL setup or database role installation step and retry it.</li>
+      </ol>
+    </div>
+
+    <div class="section">
+      <h2>Download the migration bundle</h2>
+
+      <p>Run this on each target appliance.</p>
+
+      <pre><code>cd /root
+rm -rf migrate-appliance migrate-appliance.tar.gz
+curl -fL -o migrate-appliance.tar.gz https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.tar.gz
+tar -xzf migrate-appliance.tar.gz
+chmod 700 migrate-appliance.sh</code></pre>
+    </div>
+
+    <div class="section">
+      <h2>Source appliance shutdown</h2>
+
+      <div class="warning">
+        Stop RapidIdentity on the source appliances during the maintenance window before running migration.
+      </div>
+
+      <p>Stop services on the source ARMS/Portal, DSS/Connect, and DB appliances.</p>
+
+      <pre><code>service rapididentity stop</code></pre>
+    </div>
+
+    <div class="section">
+      <h2>Target DB appliance migration</h2>
+
+      <ol>
+        <li>Confirm <code>idautodb</code> resolves locally on the target DB appliance.</li>
+        <li>Run the migration script against the source DB appliance.</li>
+      </ol>
+
+      <pre><code>./migrate-appliance.sh --src-host=&lt;source-db-ip&gt; --target-db-host=localhost --migrate-db</code></pre>
+
+      <p>Review the script output before moving to the non-DB appliances.</p>
+    </div>
+
+    <div class="section">
+      <h2>Target ARMS/Portal appliance migration</h2>
+
+      <ol>
+        <li>Confirm <code>idautodb</code> resolves to the target DB appliance.</li>
+        <li>Run the migration script against the source ARMS/Portal appliance.</li>
+      </ol>
+
+      <pre><code>./migrate-appliance.sh --src-host=&lt;source-arms-ip&gt; --target-db-host=idautodb --migrate-db</code></pre>
+    </div>
+
+    <div class="section">
+      <h2>Target DSS/Connect appliance migration</h2>
+
+      <ol>
+        <li>Confirm <code>idautodb</code> resolves to the target DB appliance.</li>
+        <li>Run the migration script against the source DSS/Connect appliance.</li>
+      </ol>
+
+      <pre><code>./migrate-appliance.sh --src-host=&lt;source-dss-ip&gt; --target-db-host=idautodb --migrate-db</code></pre>
+    </div>
+
+    <div class="section">
+      <h2>Validate before cutover</h2>
+
+      <ol>
+        <li>Start RapidIdentity on the target DB, DSS/Connect, and ARMS/Portal appliances.</li>
+        <li>Confirm Portal and Configuration load successfully.</li>
+        <li>Confirm Connect loads and the Jobs page is available.</li>
+        <li>Confirm the target appliances appear healthy in the cluster view.</li>
+        <li>Validate database-backed configuration such as SAML, LDAP, licenses, applications, workflows, and representative jobs.</li>
+        <li>Review logs on each node before transferring production IPs.</li>
+      </ol>
+
+      <pre><code>service rapididentity start</code></pre>
+    </div>
+
+    <div class="section">
+      <h2>If configuration data is missing</h2>
+
+      <div class="warning">
+        If the script migration completes but SAML, LDAP, license, application, or workflow configuration is missing, restore from a known-good PostgreSQL dump instead of relying on UI database migration.
+      </div>
+
+      <ol>
+        <li>Copy the current source DB backup to the target DB appliance.</li>
+        <li>Stop RapidIdentity on every target appliance connected to the target DB.</li>
+        <li>Restore the dump into <code>idautodb</code> and capture a restore log.</li>
+      </ol>
+
+      <pre><code>gunzip -c /path/to/idautodb_pg_backup.sql.gz | psql idautodb idautoAdmin 2&gt;&amp;1 | tee /tmp/idautodb_restore.log</code></pre>
+
+      <ol start="4">
+        <li>Validate the expected configuration tables contain data.</li>
+        <li>Start RapidIdentity again and repeat validation.</li>
+      </ol>
+
+      <pre><code>psql idautodb idautoAdmin -c "select count(*) from saml_idp;"
 service rapididentity start</code></pre>
-                </li>
-              </ol>
-            </div>
-          </details>
-        </div>
 
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.4 Install File Server (optional)</h3>
-          <p>
-            Optional: install File Server if you need the appliance SFTP drop location (example: <code>/var/sftp/files/</code>) for transferring files like <code>configdb.sql</code>.
-            If you are transferring DB backups by scp/sftp another way, this step can be skipped.
-          </p>
-          <p>In the terminal UI select File Server and install. If prompted set a password.</p>
-        </div>
+      <p>Restore logs may include early <code>does not exist</code> messages when the dump contains clean/drop statements. Treat those as noise only after confirming the restore completes and expected tables contain data.</p>
+    </div>
 
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.5 Pre cutover checks</h3>
-          <p>Confirm every new appliance will start and join the cluster. Check logs or disable SSO in rapididentity.properties to log in. In the UI you can verify at Configuration &gt; Systems &gt; Cluster. Look for Successfully join cluster or the license sequence in logs.</p>
-        </div>
+    <div class="section">
+      <h2>Cutover</h2>
 
-        <div class="space-y-4">
-          <h3 class="text-lg font-semibold">2.6 Transfer IPs</h3>
-          <ol class="list-decimal list-inside space-y-2 pl-4">
-            <li>If supported by the hypervisor, disable the NIC on each old appliance.</li>
-            <li>Shutdown old appliances in the order ARMS, DSS, DB.</li>
-            <li>Assign production IPs to the new appliances.</li>
-            <li>Update the hosts file line on each new appliance to map idautodb to the production DB ip.</li>
-            <li>Start new appliances in the order DB, DSS, ARMS and Portal.</li>
-          </ol>
-        </div>
-      </section>
+      <ol>
+        <li>Snapshot the new target appliances after validation passes.</li>
+        <li>If supported by the hypervisor, disconnect or disable the old appliance NICs before moving production IPs.</li>
+        <li>Shut down old appliances in this order: ARMS/Portal, DSS/Connect, DB.</li>
+        <li>Move the production IPs to the new appliances.</li>
+        <li>Update each target appliance hosts file so <code>idautodb</code> maps to the production DB IP.</li>
+        <li>Start new appliances in this order: DB, DSS/Connect, ARMS/Portal.</li>
+        <li>Validate Portal, Connect, workflows, jobs, SSO, cluster state, and logs.</li>
+      </ol>
+    </div>
 
-      <section id="validation" class="space-y-6">
-        <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">3.</span> Validation and upgrades
-        </h2>
-        <ol class="list-decimal list-inside space-y-3 pl-4">
-          <li>Portal and Connect load and allow login.</li>
-          <li>Run representative workflows and check logs on all nodes.</li>
-          <li>DNS or production IPs resolve to the new appliances.</li>
-          <li>Snapshot the new appliances.</li>
-          <li>Go to Configuration &gt; System &gt; Updates &gt; Custom Update and enter:
-            <div class="mt-2">
-              <div class="grid grid-cols-1 gap-2">
-                <div class="flex items-start gap-2"><span class="w-28 font-medium">Filename</span><span>rapididentity-2020.1.5-7597.zip</span></div>
-                <div class="flex items-start gap-2"><span class="w-28 font-medium">Timestamp</span><span>2021-01-25T18:42:02.291Z</span></div>
-                <div class="flex items-start gap-2"><span class="w-28 font-medium">Checksum</span><span class="break-all">35dac1d2f77aacc8aded892cc7e50330e739a855</span></div>
-              </div>
-            </div>
-          </li>
-          <li>Snapshot again and choose the 2025 release.</li>
-          <li>After the 2025 upgrade completes and is stable take a final post migration snapshot.</li>
-        </ol>
-      </section>
+    <div class="section">
+      <h2>Upgrade after migration</h2>
 
-      <section id="troubleshooting" class="space-y-6 pb-16">
-        <h2 class="text-xl font-semibold text-sky-700 flex items-center">
-          <span class="mr-2">4.</span> Troubleshooting and quick commands
-        </h2>
-        <div class="grid md:grid-cols-2 gap-8">
-          <div>
-            <h3 class="font-semibold mb-2">Common issues</h3>
-            <ul class="list-disc list-inside space-y-2">
-              <li>CLI shows DB running but Postgres is not installed. Roll back the appliances and run the DB Fix step then the migration script.</li>
-              <li>Routing or mask issues. Correct the mask and retest.</li>
-              <li>SSO loops. Disable SSO in rapididentity.properties and restart RI.</li>
-              <li>
-                If you accidentally run <code>gunzip -c file.sql.gz</code> without piping into <code>psql</code>, the terminal will print SQL.
-                Press <code>Ctrl+C</code>, then run <code>reset</code> or <code>clear</code>.
-              </li>
-              <li>
-                Restore logs may contain errors like <code>relation ... does not exist</code> / <code>does not exist</code>.
-                This is often expected when the dump was created with <code>--clean</code> (DROP statements).
-                Focus on whether the restore completes and whether the target tables contain data.
-              </li>
-            </ul>
-          </div>
-          <div>
-            <h3 class="font-semibold mb-2">Cheat sheet</h3>
-            <pre class="bg-gray-100 p-3 rounded text-sm whitespace-pre-wrap"><code>service rapididentity stop
-service rapididentity start
-
-# DB version
-psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"
-
-# Where the daily backup script usually lives
-ls -lh /etc/cron.daily/
-
-# Where backups commonly land
-ls -lh /var/opt/idauto/backup/idautodb_pg_backup_*.sql.gz | tail
-
-# Recommended restore from .sql.gz backup (workaround)
-gunzip -c /var/opt/idauto/backup/idautodb_pg_backup_XXXXXX.sql.gz | psql idautodb idautoAdmin 2>&1 | tee /tmp/idautodb_restore.log
-
-# Optional: review errors (expect some "does not exist" noise due to --clean)
-grep -n "ERROR:" /tmp/idautodb_restore.log | head -n 50
-grep -n "ERROR:" /tmp/idautodb_restore.log | grep -v "does not exist" | head -n 50
-
-# Verify config exists (example)
-psql idautodb idautoAdmin -c "select count(*) from saml_idp;"</code></pre>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <footer class="bg-sky-700 text-white text-sm py-4">
-      <div class="max-w-7xl mx-auto px-4 text-center">
-        RapidIdentity Migration Guide
+      <div class="note">
+        Upgrade only after migration validation passes and a fresh snapshot exists. Use the currently approved upgrade path for the customer and appliance generation.
       </div>
-    </footer>
-  </body>
+
+      <ol>
+        <li>Take a snapshot of each new appliance.</li>
+        <li>Apply the approved intermediate update if the runbook requires one.</li>
+        <li>Validate service startup and cluster health after the intermediate update.</li>
+        <li>Take another snapshot.</li>
+        <li>Upgrade to the approved target RapidIdentity release.</li>
+        <li>Take a final post-upgrade snapshot after validation is complete.</li>
+      </ol>
+    </div>
+  </div>
+</body>
 </html>
