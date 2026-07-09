@@ -86,6 +86,24 @@
       overflow-wrap: normal;
     }
 
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10px 0 16px;
+    }
+
+    th, td {
+      border: 1px solid #d9d9d9;
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      background: #f7f7f7;
+      font-weight: 700;
+    }
+
     .section {
       margin-bottom: 28px;
     }
@@ -103,47 +121,134 @@
       </div>
 
       <p>This flow is intended for migrations from older RapidIdentity appliances, such as 2019-era environments, to a replacement appliance set that can then be upgraded after validation.</p>
+
+      <p>The guide is split into two parts: customer preparation before the scheduled migration call, followed by support-led migration steps performed during the call.</p>
     </div>
 
     <div class="section">
-      <h2>Before the maintenance window</h2>
+      <h2>Customer prep before the migration call</h2>
+
+      <div class="warning">
+        Stop after the hosts file step unless Identity Automation Support instructs you to continue. Do not power down the legacy appliances and do not reuse production IP addresses during prep.
+      </div>
+
+      <p>Create one new appliance for each current legacy appliance role. A typical environment has one DB appliance, one ARMS/Portal appliance, and one DSS/Connect appliance.</p>
+
+      <ul>
+        <li>Use the same hypervisor platform that currently hosts the legacy appliances. For Hyper-V, choose Generation 1.</li>
+        <li>Match the memory and disk size of the corresponding legacy appliance. Do not enable Dynamic Memory.</li>
+        <li>Connect each new VM to the same network or subnet as the legacy appliances.</li>
+        <li>Use temporary IP addresses for the new appliances. Production IP cutover happens later.</li>
+        <li>Install the same RapidIdentity 2019 LTS release currently running on the legacy appliances.</li>
+        <li>Use the appliance ISO attached to the support case. If the attachment is unavailable, use the RapidIdentity latest ISO link provided by Support.</li>
+      </ul>
+
+      <h3>Build each replacement VM</h3>
 
       <ol>
-        <li>Confirm the source RapidIdentity version and the supported target appliance ISO/build.</li>
-        <li>Create new DB, ARMS/Portal, and DSS/Connect VMs using the same RapidIdentity build as the source environment.</li>
-        <li>Assign temporary IP addresses to the new appliances.</li>
-        <li>Record source and target hostnames, IP addresses, CIDR masks, gateways, DNS servers, and appliance roles.</li>
-        <li>Snapshot each source appliance before making changes.</li>
-        <li>Gather the appliance admin credentials, database password, SFTP password, and any vault-managed secrets required by the runbook.</li>
+        <li>Name each VM clearly for its role, such as DB, ARMS, or DSS.</li>
+        <li>Assign static memory that matches the current appliance.</li>
+        <li>Create a virtual hard drive that matches the current appliance disk size.</li>
+        <li>Attach the VM to the same virtual network used by the existing appliance.</li>
+        <li>For Hyper-V, select the option to install an operating system later, then attach the ISO after the VM is created.</li>
+      </ol>
+
+      <h3>Install the appliance OS and RapidIdentity</h3>
+
+      <ol>
+        <li>Boot the new VM from the RapidIdentity appliance ISO.</li>
+        <li>If the VM does not boot from the installer, confirm the ISO is attached and the VM is booting from the virtual DVD device.</li>
+        <li>When the installer appears, choose the latest 2019 LTS release.</li>
+        <li>Let the installation complete without interruption.</li>
+        <li>Set the password for the automatically created <code>config</code> user and record it for the migration call.</li>
+        <li>After the first reboot, remove the installation media and reboot again so the VM starts from the installed appliance OS.</li>
+        <li>Sign in as <code>config</code> and configure temporary static network settings.</li>
+        <li>Install RapidIdentity from the appliance menu, let the install finish, and reboot when prompted.</li>
+        <li>Confirm the appliance login screen shows the configured temporary IP address. If it does not refresh immediately, sign in as <code>config</code> and sign back out.</li>
+      </ol>
+
+      <h3>Temporary network settings</h3>
+
+      <p>Use manual IPv4 configuration with a temporary IP address on the same subnet as the legacy appliances. Enter the correct gateway, DNS servers, and search domains for the customer's network.</p>
+
+      <p>Menu path after installation:</p>
+
+      <pre><code>System &gt; Network &gt; Network Settings &gt; Basic Network Settings &gt; Edit a connection</code></pre>
+    </div>
+
+    <div class="section">
+      <h2>Set the idautodb hosts entry</h2>
+
+      <p>After RapidIdentity is installed and networking is configured, sign in as <code>config</code> and open the hosts file menu.</p>
+
+      <pre><code>System &gt; Network &gt; Network Settings &gt; Hosts File</code></pre>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Appliance</th>
+            <th>Hosts entry</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>DB appliance</td>
+            <td><code>localhost idautodb</code></td>
+            <td>Use this only on the new DB appliance.</td>
+          </tr>
+          <tr>
+            <td>Non-DB appliances</td>
+            <td><code>&lt;temporary-db-ip&gt; idautodb</code></td>
+            <td>Use the temporary IP address assigned to the new DB appliance.</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="warning">
+        Stop here for customer prep. Do not attempt PostgreSQL installation, repository repair, migration scripts, service shutdown, or IP cutover before the scheduled migration call.
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Ready for the migration call</h2>
+
+      <p>Before the call, confirm these items are complete and provide the temporary IP address for each new appliance role.</p>
+
+      <ul>
+        <li>One new appliance exists for each current legacy appliance role.</li>
+        <li>If using Hyper-V, each VM is Generation 1.</li>
+        <li>Dynamic Memory is disabled.</li>
+        <li>Memory and disk sizing match the current appliances.</li>
+        <li>Each new appliance is connected to the same network or subnet as the legacy appliances.</li>
+        <li>Each new appliance has a temporary IP address, and no production legacy IP has been reused.</li>
+        <li>The <code>config</code> password is recorded for the migration call.</li>
+        <li>RapidIdentity 2019 LTS is installed on each new appliance.</li>
+        <li>The hosts file includes the correct <code>idautodb</code> entry on each appliance.</li>
+        <li>The new appliances can communicate with each other on the network.</li>
+      </ul>
+
+      <pre><code>New DB: &lt;temporary IP&gt;
+New DSS/Connect: &lt;temporary IP&gt;
+New ARMS/Portal: &lt;temporary IP&gt;</code></pre>
+    </div>
+
+    <div class="section">
+      <h2>Support call starting point</h2>
+
+      <div class="note">
+        Begin here during the scheduled migration call after customer preparation is complete.
+      </div>
+
+      <ol>
+        <li>Confirm the appliance role and temporary IP map.</li>
+        <li>Confirm <code>idautodb</code> resolves correctly on each target appliance.</li>
+        <li>Snapshot the source appliances before making changes.</li>
         <li>Confirm a recent PostgreSQL backup exists on the source DB appliance.</li>
       </ol>
 
       <pre><code>psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"
 ls -lh /var/opt/idauto/backup/idautodb_pg_backup_*.sql.gz | tail</code></pre>
-    </div>
-
-    <div class="section">
-      <h2>Target appliance preparation</h2>
-
-      <div class="note">
-        Run these steps after the new appliances are installed and before starting the migration script.
-      </div>
-
-      <ol>
-        <li>Confirm the network profile on each target appliance uses the expected static IP, CIDR mask, gateway, and DNS servers.</li>
-        <li>Confirm the target appliances can reach each other on the migration network.</li>
-        <li>Update hosts resolution so <code>idautodb</code> points to the target DB appliance during migration.</li>
-      </ol>
-
-      <h3>Target DB appliance</h3>
-      <p>Add <code>idautodb</code> to the localhost entry if the DB migration script will run locally on the DB appliance.</p>
-
-      <pre><code>127.0.0.1 localhost idautodb</code></pre>
-
-      <h3>Target non-DB appliances</h3>
-      <p>Add the target DB appliance IP entry.</p>
-
-      <pre><code>&lt;target-db-ip&gt; idautodb</code></pre>
     </div>
 
     <div class="section">
