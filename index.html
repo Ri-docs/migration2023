@@ -15,9 +15,12 @@
       color: #111111;
       font-family: Arial, Helvetica, sans-serif;
       line-height: 1.5;
+      overflow-x: hidden;
     }
 
     .page {
+      width: 100%;
+      min-width: 0;
       max-width: 900px;
       margin: 0 auto;
       padding: 36px 28px 48px;
@@ -68,6 +71,7 @@
     }
 
     pre {
+      max-width: 100%;
       margin: 10px 0 16px;
       padding: 12px;
       border: 1px solid #d9d9d9;
@@ -88,6 +92,8 @@
 
     table {
       width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
       border-collapse: collapse;
       margin: 10px 0 16px;
     }
@@ -97,6 +103,7 @@
       padding: 8px 10px;
       text-align: left;
       vertical-align: top;
+      overflow-wrap: anywhere;
     }
 
     th {
@@ -106,6 +113,20 @@
 
     .section {
       margin-bottom: 28px;
+    }
+
+    @media (max-width: 600px) {
+      .page {
+        padding: 24px 16px 36px;
+      }
+
+      h1 {
+        font-size: 22px;
+      }
+
+      th, td {
+        padding: 6px;
+      }
     }
   </style>
 </head>
@@ -252,42 +273,30 @@ ls -lh /var/opt/idauto/backup/idautodb_pg_backup_*.sql.gz | tail</code></pre>
     </div>
 
     <div class="section">
-      <h2>Repair yum repositories on the target DB appliance</h2>
+      <h2>Prepare PostgreSQL 11 on the target DB appliance</h2>
 
       <div class="warning">
-        Run this before installing or configuring PostgreSQL on older CentOS 7 based appliances. Stale MySQL and version-specific PGDG repositories can block appliance setup and RapidIdentity updates.
+        Run this only on a fresh CentOS 7 target DB appliance. Do not use the historical <code>dbfix.sh</code> for this migration path; it rewrites the appliance scripts from PostgreSQL 11 to 15, and PostgreSQL 15 <code>pg_dump</code> cannot migrate the legacy PostgreSQL 9.1 database used by these appliances.
       </div>
 
       <ol>
-        <li>Download and run the repo cleanup script.</li>
+        <li>Run the support-owned PostgreSQL 11 preflight. It backs up the active yum repository files, switches CentOS 7 to the vault repositories, configures the archived PG11 repository, and verifies the PG11 client.</li>
       </ol>
 
       <pre><code>cd /var/tmp
-curl -fsSLO https://ri-docs-files.s3.us-east-1.amazonaws.com/ri-repo-fix.zip
-unzip -o ri-repo-fix.zip -d /var/tmp/ri-repo-fix
-chmod +x /var/tmp/ri-repo-fix/ri-repo-fix.sh
-bash /var/tmp/ri-repo-fix/ri-repo-fix.sh</code></pre>
+curl -fsSLO https://ri-docs-files.s3.us-east-1.amazonaws.com/ri-2019-pg11-preflight.sh
+chmod 700 ri-2019-pg11-preflight.sh
+./ri-2019-pg11-preflight.sh --prepare-new-target-db</code></pre>
 
       <ol start="2">
-        <li>If the PostgreSQL install fails with <code>No package postgresql11-server available</code>, add the PostgreSQL 11 archive repository.</li>
+        <li>Confirm the PG11 client is available before downloading or running the migration bundle.</li>
       </ol>
 
-      <pre><code>cat &gt; /etc/yum.repos.d/pgdg-11-archive.repo &lt;&lt;'EOF'
-[pgdg11-archive]
-name=PostgreSQL 11 archive for RHEL/CentOS 7 - x86_64
-baseurl=https://yum-archive.postgresql.org/11/redhat/rhel-7-x86_64
-enabled=1
-gpgcheck=1
-gpgkey=file:///etc/pki/rpm-gpg/PGDG-RPM-GPG-KEY-RHEL7
-EOF
+      <pre><code>/usr/pgsql-11/bin/pg_dump --version
+readlink -f /usr/bin/pg_dump
+pg_dump --version</code></pre>
 
-yum clean all
-yum makecache
-yum list available postgresql11-server postgresql11-contrib</code></pre>
-
-      <ol start="3">
-        <li>Return to the appliance PostgreSQL setup or database role installation step and retry it.</li>
-      </ol>
+      <p>The DB migration command below places <code>/usr/pgsql-11/bin</code> first in <code>PATH</code>, so the migration keeps using PG11 even if another installed client owns the system alternative.</p>
     </div>
 
     <div class="section">
@@ -322,7 +331,9 @@ chmod 700 migrate-appliance.sh</code></pre>
         <li>Run the migration script against the source DB appliance.</li>
       </ol>
 
-      <pre><code>./migrate-appliance.sh --src-host=&lt;source-db-ip&gt; --target-db-host=localhost --migrate-db</code></pre>
+      <pre><code>PATH=/usr/pgsql-11/bin:$PATH ./migrate-appliance.sh --src-host=&lt;source-db-ip&gt; --target-db-host=localhost --migrate-db</code></pre>
+
+      <p>Stop if the output reports a PostgreSQL 15 <code>pg_dump</code> client or a PostgreSQL 15 target server. Restore the clean target snapshot and repeat the PG11 preparation path.</p>
 
       <p>Review the script output before moving to the non-DB appliances.</p>
     </div>
@@ -335,7 +346,9 @@ chmod 700 migrate-appliance.sh</code></pre>
         <li>Run the migration script against the source ARMS/Portal appliance.</li>
       </ol>
 
-      <pre><code>./migrate-appliance.sh --src-host=&lt;source-arms-ip&gt; --target-db-host=idautodb --migrate-db</code></pre>
+      <pre><code>./migrate-appliance.sh --src-host=&lt;source-arms-ip&gt; --target-db-host=idautodb</code></pre>
+
+      <p>Do not use <code>--migrate-db</code> on ARMS/Portal. That flag installs a local database and imports from the source host.</p>
     </div>
 
     <div class="section">
@@ -346,7 +359,32 @@ chmod 700 migrate-appliance.sh</code></pre>
         <li>Run the migration script against the source DSS/Connect appliance.</li>
       </ol>
 
-      <pre><code>./migrate-appliance.sh --src-host=&lt;source-dss-ip&gt; --target-db-host=idautodb --migrate-db</code></pre>
+      <pre><code>./migrate-appliance.sh --src-host=&lt;source-dss-ip&gt; --target-db-host=idautodb</code></pre>
+
+      <p>Do not use <code>--migrate-db</code> on DSS/Connect. That flag is only for the target DB appliance.</p>
+    </div>
+
+    <div class="section">
+      <h2>If DSS/ARMS cannot connect to idautodb</h2>
+
+      <p>Confirm name resolution and TCP 5432 before changing application configuration.</p>
+
+      <pre><code>getent hosts idautodb
+timeout 5 bash -c '&lt;/dev/tcp/idautodb/5432' &amp;&amp; echo "5432 open" || echo "5432 failed"</code></pre>
+
+      <p>On the target DB, verify PostgreSQL is listening and that the firewalld zone is valid, loaded, and attached to the actual NIC. The interface may be named <code>ens192</code> rather than <code>eth0</code>.</p>
+
+      <pre><code>systemctl status postgresql-11 --no-pager
+ss -lntp | grep 5432
+firewall-offline-cmd --check-config
+firewall-cmd --reload
+firewall-cmd --get-active-zones
+firewall-cmd --zone=idauto --list-all
+firewall-cmd --zone=idauto --query-service=postgresql</code></pre>
+
+      <div class="note">
+        The custom zone file must be named exactly <code>/etc/firewalld/zones/idauto.xml</code>. A file named <code>idauto.xml.old</code> is only a backup and does not create the <code>idauto</code> zone. Do not copy the legacy CentOS 6 iptables file directly onto the CentOS 7 target.
+      </div>
     </div>
 
     <div class="section">
@@ -413,7 +451,14 @@ service rapididentity start</code></pre>
 
       <ol>
         <li>Take a snapshot of each new appliance.</li>
-        <li>Apply the approved intermediate update if the runbook requires one.</li>
+        <li>Apply the approved intermediate update if the runbook requires one. The verified 2019 migration hop used these Custom Update values:</li>
+      </ol>
+
+      <pre><code>Filename:  rapididentity-2020.1.5-7597.zip
+Timestamp: 2021-01-25T18:42:02.291Z
+Checksum:  35dac1d2f77aacc8aded892cc7e50330e739a855</code></pre>
+
+      <ol start="3">
         <li>Validate service startup and cluster health after the intermediate update.</li>
         <li>Take another snapshot.</li>
         <li>Upgrade to the approved target RapidIdentity release.</li>
