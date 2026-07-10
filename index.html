@@ -15,9 +15,12 @@
       color: #111111;
       font-family: Arial, Helvetica, sans-serif;
       line-height: 1.5;
+      overflow-x: hidden;
     }
 
     .page {
+      width: 100%;
+      min-width: 0;
       max-width: 900px;
       margin: 0 auto;
       padding: 36px 28px 48px;
@@ -68,6 +71,7 @@
     }
 
     pre {
+      max-width: 100%;
       margin: 10px 0 16px;
       padding: 12px;
       border: 1px solid #d9d9d9;
@@ -88,6 +92,8 @@
 
     table {
       width: 100%;
+      max-width: 100%;
+      table-layout: fixed;
       border-collapse: collapse;
       margin: 10px 0 16px;
     }
@@ -97,6 +103,7 @@
       padding: 8px 10px;
       text-align: left;
       vertical-align: top;
+      overflow-wrap: anywhere;
     }
 
     th {
@@ -106,6 +113,26 @@
 
     .section {
       margin-bottom: 28px;
+    }
+
+    @media (max-width: 600px) {
+      .page {
+        padding: 24px 16px 36px;
+      }
+
+      h1 {
+        font-size: 22px;
+      }
+
+      th, td {
+        padding: 6px;
+      }
+
+      pre code {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+        word-break: break-word;
+      }
     }
   </style>
 </head>
@@ -136,10 +163,13 @@
 
       <ul>
         <li>Use the same hypervisor platform that currently hosts the legacy appliances. For Hyper-V, choose Generation 1.</li>
-        <li>Match the memory and disk size of the corresponding legacy appliance. Do not enable Dynamic Memory.</li>
+        <li>Match the memory and disk size of the corresponding legacy appliance. Verify the two values independently so they are not accidentally swapped, and do not enable Dynamic Memory.</li>
         <li>Connect each new VM to the same network or subnet as the legacy appliances.</li>
         <li>Use temporary IP addresses for the new appliances. Production IP cutover happens later.</li>
         <li>Install the same RapidIdentity 2019 LTS release currently running on the legacy appliances.</li>
+        <li>Record the current production hostname and role for each legacy appliance.</li>
+        <li>Confirm the existing local RapidIdentity administrator username and password are available in the customer's approved password manager. Older environments may use a customized administrator name. Do not place passwords in the support case.</li>
+        <li>Ensure a hypervisor administrator is available during the migration window for snapshots, reverts, and production IP or hostname changes.</li>
         <li>Use the appliance ISO attached to the support case. If the attachment is unavailable, use the RapidIdentity latest ISO link provided by Support.</li>
       </ul>
 
@@ -147,8 +177,8 @@
 
       <ol>
         <li>Name each VM clearly for its role, such as DB, ARMS, or DSS.</li>
-        <li>Assign static memory that matches the current appliance.</li>
-        <li>Create a virtual hard drive that matches the current appliance disk size.</li>
+        <li>Assign static memory that matches the current appliance and verify it independently from the disk size.</li>
+        <li>Create a virtual hard drive that matches the current appliance disk size and confirm the memory and disk values were not reversed.</li>
         <li>Attach the VM to the same virtual network used by the existing appliance.</li>
         <li>For Hyper-V, select the option to install an operating system later, then attach the ISO after the VM is created.</li>
       </ol>
@@ -219,13 +249,16 @@
         <li>One new appliance exists for each current legacy appliance role.</li>
         <li>If using Hyper-V, each VM is Generation 1.</li>
         <li>Dynamic Memory is disabled.</li>
-        <li>Memory and disk sizing match the current appliances.</li>
+        <li>Memory and disk sizing match the current appliances and were verified independently so the values are not swapped.</li>
         <li>Each new appliance is connected to the same network or subnet as the legacy appliances.</li>
         <li>Each new appliance has a temporary IP address, and no production legacy IP has been reused.</li>
         <li>The <code>config</code> password is recorded for the migration call.</li>
         <li>RapidIdentity 2019 LTS is installed on each new appliance.</li>
         <li>The hosts file includes the correct <code>idautodb</code> entry on each appliance.</li>
         <li>The new appliances can communicate with each other on the network.</li>
+        <li>The current production hostname and appliance role are recorded for each legacy appliance.</li>
+        <li>The existing local RapidIdentity administrator credentials are available in the approved password manager.</li>
+        <li>A hypervisor administrator will be available throughout the migration window.</li>
       </ul>
 
       <pre><code>New DB: &lt;temporary IP&gt;
@@ -241,10 +274,12 @@ New ARMS/Portal: &lt;temporary IP&gt;</code></pre>
       </div>
 
       <ol>
-        <li>Confirm the appliance role and temporary IP map.</li>
+        <li>Confirm the appliance role, temporary IP, production IP, and production OS hostname map.</li>
         <li>Confirm <code>idautodb</code> resolves correctly on each target appliance.</li>
-        <li>Snapshot the source appliances before making changes.</li>
-        <li>Confirm a recent PostgreSQL backup exists on the source DB appliance.</li>
+        <li>Confirm the new targets have clean rollback snapshots from before any repository or database preparation.</li>
+        <li>Preserve source-appliance recovery points and confirm a recent PostgreSQL backup exists on the source DB appliance.</li>
+        <li>Confirm the source and target RapidIdentity builds match the migration path, then record the source PostgreSQL server version and target client-tool versions.</li>
+        <li>Confirm the existing local RapidIdentity administrator and hypervisor access are available for temporary-IP validation and cutover.</li>
       </ol>
 
       <pre><code>psql idautodb idautoAdmin -t -A -c "show server_version; show server_version_num;"
@@ -252,42 +287,32 @@ ls -lh /var/opt/idauto/backup/idautodb_pg_backup_*.sql.gz | tail</code></pre>
     </div>
 
     <div class="section">
-      <h2>Repair yum repositories on the target DB appliance</h2>
+      <h2>Prepare PostgreSQL 11 on the target DB appliance</h2>
 
       <div class="warning">
-        Run this before installing or configuring PostgreSQL on older CentOS 7 based appliances. Stale MySQL and version-specific PGDG repositories can block appliance setup and RapidIdentity updates.
+        Run this only on a fresh CentOS 7 target DB appliance. Do not use the historical <code>dbfix.sh</code> for this migration path; it rewrites the appliance scripts from PostgreSQL 11 to 15, and PostgreSQL 15 <code>pg_dump</code> cannot migrate the legacy PostgreSQL 9.1 database used by these appliances.
       </div>
 
       <ol>
-        <li>Download and run the repo cleanup script.</li>
+        <li>Run the support-owned PostgreSQL 11 preflight. It backs up the active yum repository files, switches CentOS 7 to the vault repositories, configures the archived PG11 repository, and verifies the PG11 dump, restore, and command-line clients.</li>
       </ol>
 
       <pre><code>cd /var/tmp
-curl -fsSLO https://ri-docs-files.s3.us-east-1.amazonaws.com/ri-repo-fix.zip
-unzip -o ri-repo-fix.zip -d /var/tmp/ri-repo-fix
-chmod +x /var/tmp/ri-repo-fix/ri-repo-fix.sh
-bash /var/tmp/ri-repo-fix/ri-repo-fix.sh</code></pre>
+curl -fsSLO https://ri-docs-files.s3.us-east-1.amazonaws.com/ri-2019-pg11-preflight.sh
+echo "31de37dd0e5ca6ce9dd61d48e51d00e2e03a38a761c6bc73550b6d5a8a0273be  ri-2019-pg11-preflight.sh" | sha256sum -c -
+chmod 700 ri-2019-pg11-preflight.sh
+./ri-2019-pg11-preflight.sh --prepare-new-target-db</code></pre>
 
       <ol start="2">
-        <li>If the PostgreSQL install fails with <code>No package postgresql11-server available</code>, add the PostgreSQL 11 archive repository.</li>
+        <li>Confirm all required tools report PostgreSQL 11 and that the registered system alternatives resolve to the PG11 binaries before downloading or running the migration bundle.</li>
       </ol>
 
-      <pre><code>cat &gt; /etc/yum.repos.d/pgdg-11-archive.repo &lt;&lt;'EOF'
-[pgdg11-archive]
-name=PostgreSQL 11 archive for RHEL/CentOS 7 - x86_64
-baseurl=https://yum-archive.postgresql.org/11/redhat/rhel-7-x86_64
-enabled=1
-gpgcheck=1
-gpgkey=file:///etc/pki/rpm-gpg/PGDG-RPM-GPG-KEY-RHEL7
-EOF
+      <pre><code>for tool in pg_dump pg_dumpall pg_restore psql; do
+  /usr/pgsql-11/bin/$tool --version
+  readlink -f /usr/bin/$tool
+done</code></pre>
 
-yum clean all
-yum makecache
-yum list available postgresql11-server postgresql11-contrib</code></pre>
-
-      <ol start="3">
-        <li>Return to the appliance PostgreSQL setup or database role installation step and retry it.</li>
-      </ol>
+      <p>The DB migration command below places <code>/usr/pgsql-11/bin</code> first in <code>PATH</code>, so the migration keeps using PG11 even if another installed client owns the system alternative.</p>
     </div>
 
     <div class="section">
@@ -298,15 +323,20 @@ yum list available postgresql11-server postgresql11-contrib</code></pre>
       <pre><code>cd /root
 rm -rf migrate-appliance migrate-appliance.tar.gz
 curl -fL -o migrate-appliance.tar.gz https://idauto-apps.s3.amazonaws.com/appliance-migrate/migrate-appliance.tar.gz
+echo "80fb91aed8bb871a80ce3a5b15191d83bf0c02b6ebd4bc459106eb448b5fee44  migrate-appliance.tar.gz" | sha256sum -c -
 tar -xzf migrate-appliance.tar.gz
 chmod 700 migrate-appliance.sh</code></pre>
+
+      <div class="note">
+        The checksum above was verified on 2026-07-10. Reverify the URL, size, and checksum before each migration window; stop if the downloaded artifact does not match the approved value.
+      </div>
     </div>
 
     <div class="section">
       <h2>Source appliance shutdown</h2>
 
       <div class="warning">
-        Stop RapidIdentity on the source appliances during the maintenance window before running migration.
+        Stop RapidIdentity on the source appliances during the maintenance window before running migration, but leave the legacy VMs powered on and network reachable. The migration scripts still need SSH and data access to the source nodes.
       </div>
 
       <p>Stop services on the source ARMS/Portal, DSS/Connect, and DB appliances.</p>
@@ -322,7 +352,9 @@ chmod 700 migrate-appliance.sh</code></pre>
         <li>Run the migration script against the source DB appliance.</li>
       </ol>
 
-      <pre><code>./migrate-appliance.sh --src-host=&lt;source-db-ip&gt; --target-db-host=localhost --migrate-db</code></pre>
+      <pre><code>PATH=/usr/pgsql-11/bin:$PATH ./migrate-appliance.sh --src-host=&lt;source-db-ip&gt; --target-db-host=localhost --migrate-db</code></pre>
+
+      <p>Stop if the output reports a PostgreSQL 15 <code>pg_dump</code> client or a PostgreSQL 15 target server. Restore the clean target snapshot and repeat the PG11 preparation path.</p>
 
       <p>Review the script output before moving to the non-DB appliances.</p>
     </div>
@@ -335,7 +367,9 @@ chmod 700 migrate-appliance.sh</code></pre>
         <li>Run the migration script against the source ARMS/Portal appliance.</li>
       </ol>
 
-      <pre><code>./migrate-appliance.sh --src-host=&lt;source-arms-ip&gt; --target-db-host=idautodb --migrate-db</code></pre>
+      <pre><code>./migrate-appliance.sh --src-host=&lt;source-arms-ip&gt; --target-db-host=idautodb</code></pre>
+
+      <p>Do not use <code>--migrate-db</code> on ARMS/Portal. That flag installs a local database and imports from the source host. A historical run using the flag on a non-DB node copied configuration first and then ended with a misleading local-database failure; rerun the non-DB migration without the flag.</p>
     </div>
 
     <div class="section">
@@ -346,22 +380,53 @@ chmod 700 migrate-appliance.sh</code></pre>
         <li>Run the migration script against the source DSS/Connect appliance.</li>
       </ol>
 
-      <pre><code>./migrate-appliance.sh --src-host=&lt;source-dss-ip&gt; --target-db-host=idautodb --migrate-db</code></pre>
+      <pre><code>./migrate-appliance.sh --src-host=&lt;source-dss-ip&gt; --target-db-host=idautodb</code></pre>
+
+      <p>Do not use <code>--migrate-db</code> on DSS/Connect. That flag is only for the target DB appliance. If a non-DB run was accidentally started with it, verify the copied configuration and rerun the command without the flag.</p>
+    </div>
+
+    <div class="section">
+      <h2>If DSS/ARMS cannot connect to idautodb</h2>
+
+      <p>Confirm name resolution and TCP 5432 before changing application configuration.</p>
+
+      <pre><code>getent hosts idautodb
+timeout 5 bash -c '&lt;/dev/tcp/idautodb/5432' &amp;&amp; echo "5432 open" || echo "5432 failed"</code></pre>
+
+      <p>On the target DB, verify PostgreSQL is listening and that the firewalld zone is valid, loaded, and attached to the actual NIC. The interface may be named <code>ens192</code> rather than <code>eth0</code>.</p>
+
+      <pre><code>systemctl status postgresql-11 --no-pager
+ss -lntp | grep 5432
+firewall-offline-cmd --check-config
+firewall-cmd --reload
+firewall-cmd --permanent --zone=idauto --change-interface=&lt;actual-interface&gt;
+firewall-cmd --set-default-zone=idauto
+firewall-cmd --reload
+firewall-cmd --get-default-zone
+firewall-cmd --get-active-zones
+firewall-cmd --zone=idauto --list-all
+firewall-cmd --zone=idauto --query-service=postgresql</code></pre>
+
+      <div class="note">
+        The custom zone file must be named exactly <code>/etc/firewalld/zones/idauto.xml</code>. Confirm the copied XML is complete through the closing <code>&lt;/zone&gt;</code> element; a truncated paste will not load. A file named <code>idauto.xml.old</code> is only a backup and does not create the <code>idauto</code> zone. Do not copy the legacy CentOS 6 iptables file directly onto the CentOS 7 target.
+      </div>
     </div>
 
     <div class="section">
       <h2>Validate before cutover</h2>
 
       <ol>
-        <li>Start RapidIdentity on the target DB, DSS/Connect, and ARMS/Portal appliances.</li>
-        <li>Confirm Portal and Configuration load successfully.</li>
-        <li>Confirm Connect loads and the Jobs page is available.</li>
-        <li>Confirm the target appliances appear healthy in the cluster view.</li>
-        <li>Validate database-backed configuration such as SAML, LDAP, licenses, applications, workflows, and representative jobs.</li>
-        <li>Review logs on each node before transferring production IPs.</li>
+        <li>Start the target DB first and wait for the migrated license and database-backed configuration to appear. Treat the license as a fast signal, not the sole database test.</li>
+        <li>Start DSS/Connect and ARMS/Portal, then confirm both nodes join the cluster and their pages load.</li>
+        <li>Temporarily disable SSO using the approved configuration method and restart RapidIdentity for direct temporary-IP validation.</li>
+        <li>Sign in with the customer's existing local RapidIdentity administrator. Do not assume the username is the historical default.</li>
+        <li>Validate representative action sets, applications, SAML/LDAP configuration, licenses, workflows, jobs, and known recent business data.</li>
+        <li>Restore SSO, restart RapidIdentity, and confirm normal behavior before cutover.</li>
+        <li>Review logs on each node, then take clean snapshots of all new targets before transferring production IPs.</li>
       </ol>
 
-      <pre><code>service rapididentity start</code></pre>
+      <pre><code># Start on the DB first; start the non-DB nodes only after DB validation
+service rapididentity start</code></pre>
     </div>
 
     <div class="section">
@@ -394,13 +459,16 @@ service rapididentity start</code></pre>
       <h2>Cutover</h2>
 
       <ol>
-        <li>Snapshot the new target appliances after validation passes.</li>
-        <li>If supported by the hypervisor, disconnect or disable the old appliance NICs before moving production IPs.</li>
-        <li>Shut down old appliances in this order: ARMS/Portal, DSS/Connect, DB.</li>
-        <li>Move the production IPs to the new appliances.</li>
-        <li>Update each target appliance hosts file so <code>idautodb</code> maps to the production DB IP.</li>
-        <li>Start new appliances in this order: DB, DSS/Connect, ARMS/Portal.</li>
-        <li>Validate Portal, Connect, workflows, jobs, SSO, cluster state, and logs.</li>
+        <li>Confirm the validated new targets have fresh snapshots.</li>
+        <li>Stop RapidIdentity on the new ARMS/Portal and DSS/Connect nodes, then stop it on the new DB. The DB is first on and last off.</li>
+        <li>Power off the old appliances in this order: ARMS/Portal, DSS/Connect, DB. Keep them powered off but recoverable until acceptance.</li>
+        <li>If supported by the hypervisor, disconnect or disable the old appliance NICs before reusing production addresses.</li>
+        <li>Move the legacy production IPs to the matching new appliances and restore the legacy production OS hostnames.</li>
+        <li>Expect SSH sessions to disconnect when network settings restart. Reconnect using the new production address after the change applies.</li>
+        <li>Preserve the <code>idautodb</code> alias. Keep <code>localhost idautodb</code> on the DB and map <code>&lt;production-db-ip&gt; idautodb</code> on DSS/Connect and ARMS/Portal. Do not remove the alias during cutover.</li>
+        <li>Start the new DB and wait for the migrated license and database checks, then start DSS/Connect and ARMS/Portal and verify cluster joins.</li>
+        <li>Test the normal SSO URL with a regular account and the DSS/Connect path with an appropriate privileged account.</li>
+        <li>Validate Portal, Connect, representative action sets, workflows, schedules, jobs, cluster state, and logs.</li>
       </ol>
     </div>
 
@@ -413,11 +481,31 @@ service rapididentity start</code></pre>
 
       <ol>
         <li>Take a snapshot of each new appliance.</li>
-        <li>Apply the approved intermediate update if the runbook requires one.</li>
+        <li>Open <code>Configuration &gt; Systems &gt; Updates &gt; Custom Update</code> and apply the approved intermediate update if the runbook requires one. The verified 2019 migration hop used these values:</li>
+      </ol>
+
+      <pre><code>Filename:  rapididentity-2020.1.5-7597.zip
+Timestamp: 2021-01-25T18:42:02.291Z
+Checksum:  35dac1d2f77aacc8aded892cc7e50330e739a855</code></pre>
+
+      <ol start="3">
+        <li>Leave <strong>Backup database before update</strong> clear only when current approved guidance permits it and verified VM/database rollback points already exist. Large audit databases can cause the embedded backup step to time out.</li>
         <li>Validate service startup and cluster health after the intermediate update.</li>
         <li>Take another snapshot.</li>
-        <li>Upgrade to the approved target RapidIdentity release.</li>
+        <li>Select the newest approved update offered by the appliance. The updater may apply required intermediate releases automatically; do not assume every hop must be selected manually.</li>
+        <li>Refresh the browser before trusting the displayed product version, then repeat cluster and functional validation.</li>
         <li>Take a final post-upgrade snapshot after validation is complete.</li>
+      </ol>
+    </div>
+
+    <div class="section">
+      <h2>Post-update acceptance</h2>
+
+      <ol>
+        <li>Verify enabled schedules, frequent password synchronization, hourly jobs, and representative overnight jobs.</li>
+        <li>Historical run/status logs may not migrate even when job definitions and action sets do. Use new executions and business results as the acceptance evidence.</li>
+        <li>Monitor the next complete overnight cycle before closing the migration.</li>
+        <li>Keep the legacy appliances powered off but recoverable until the customer accepts the new cluster, then take final stable-state snapshots.</li>
       </ol>
     </div>
   </div>
